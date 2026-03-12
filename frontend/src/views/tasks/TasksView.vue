@@ -1,0 +1,67 @@
+<script setup lang="ts">
+import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+
+import { getTasks } from '@/api/client'
+import type { TaskSummary } from '@/types'
+import { formatDateTime, formatPercent } from '@/utils/format'
+
+const router = useRouter()
+const loading = ref(true)
+const tasks = ref<TaskSummary[]>([])
+
+const columns = computed(() => [
+  { title: '任务 ID', key: 'id' },
+  { title: '账号', key: 'accountName' },
+  { title: '状态', key: 'status' },
+  {
+    title: '课程',
+    key: 'selectedCourses',
+    render: (row: TaskSummary) => row.selectedCourses.join('、'),
+  },
+  {
+    title: '进度',
+    key: 'progressPct',
+    render: (row: TaskSummary) => formatPercent(row.progressPct),
+  },
+  {
+    title: '创建时间',
+    key: 'createdAt',
+    render: (row: TaskSummary) => formatDateTime(row.createdAt),
+  },
+])
+
+onMounted(async () => {
+  tasks.value = await getTasks()
+  loading.value = false
+})
+
+function openTask(taskId: number): void {
+  void router.push(`/tasks/${taskId}`)
+}
+</script>
+
+<template>
+  <n-space vertical size="large">
+    <n-card title="任务监控" :bordered="false">
+      <n-data-table :loading="loading" :columns="columns" :data="tasks" :pagination="false" />
+    </n-card>
+
+    <n-grid x-gap="16" y-gap="16" cols="1 l:2" responsive="screen">
+      <n-grid-item v-for="task in tasks" :key="task.id">
+        <n-card hoverable :bordered="false" @click="openTask(task.id)">
+          <n-space vertical size="small">
+            <n-space justify="space-between">
+              <n-text strong>任务 #{{ task.id }}</n-text>
+              <n-tag>{{ task.status }}</n-tag>
+            </n-space>
+            <n-text depth="3">账号：{{ task.accountName }}</n-text>
+            <n-progress type="line" :percentage="Math.round(task.progressPct)" />
+            <n-text depth="3">当前课程：{{ task.currentCourse || '--' }}</n-text>
+            <n-text depth="3">当前章节：{{ task.currentChapter || '--' }}</n-text>
+          </n-space>
+        </n-card>
+      </n-grid-item>
+    </n-grid>
+  </n-space>
+</template>

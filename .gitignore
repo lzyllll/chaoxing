@@ -154,3 +154,7 @@ config*.ini
 .idea/
 .vscode/
 cache.json
+.ace-tool/
+.runtime/
+frontend/dist/
+.claude/

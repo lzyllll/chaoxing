@@ -8,7 +8,7 @@ requires-python = ">=3.13,<4.0"
 dynamic = ["dependencies"]
 
 [tool.setuptools]
-py-modules = []
+packages = { find = { include = ["chaoxing*"] } }
 
 [tool.setuptools.dynamic]
 dependencies = {file=["requirements.txt"]}

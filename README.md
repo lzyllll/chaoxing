@@ -97,6 +97,41 @@ uv run --python 3.13 main.py -c config.ini
    - 首次运行时，会自动将 `config_template.ini` 复制到该位置作为模板
    - 可以将本地编辑好的配置文件挂载到容器中，按照上述示例命令操作
 
+### Web 控制台（FastAPI + Vue3 + SQLModel）
+
+后端使用 `FastAPI + SQLModel + SQLite` 保存账号、课程快照和任务记录，前端使用 `Vue3 + Vite` 提供多账号、多课程选择界面。
+
+1. 安装后端依赖
+
+```bash
+pip install -r requirements.txt
+```
+
+2. 启动后端 API
+
+```bash
+uvicorn web_api:app --reload
+```
+
+3. 启动前端
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+4. 打开浏览器访问
+
+```text
+http://127.0.0.1:5173
+```
+
+说明：
+- 后端默认运行在 `http://127.0.0.1:8000`
+- SQLite 数据库文件保存在 `.runtime/chaoxing-web.sqlite3`
+- 每个账号的 cookies 会按账号隔离保存到 `.runtime/accounts/<account_id>/cookies.txt`
+
 ### 题库配置说明
 
 在你的配置文件中找到`[tiku]`，按照注释填写想要使用的题库名（即`provider`，大小写要一致），并填写必要信息，如token，然后在启动时添加`-c [你的配置文件路径]`即可。
