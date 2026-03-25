@@ -12,7 +12,7 @@ from sqlmodel import delete, func, select
 
 from chaoxing.core.exceptions import LoginError
 from chaoxing.services.runner import init_chaoxing, process_course, sanitize_common_config
-from chaoxing.web.db import get_session
+from chaoxing.web.db import session_context
 from chaoxing.web.models import (
     Account,
     AccountStudyConfig,
@@ -63,7 +63,7 @@ class TaskRuntimeService:
         return config
 
     def sync_account_courses(self, account_id: int) -> dict[str, Any]:
-        with get_session() as session:
+        with session_context() as session:
             account = session.get(Account, account_id)
             if account is None:
                 raise LookupError("Account not found")
@@ -110,9 +110,47 @@ class TaskRuntimeService:
             self._threads[task_id] = thread
             thread.start()
 
+    def recover_interrupted_tasks(self) -> int:
+        recovered_count = 0
+        recovered_at = datetime.now(timezone.utc)
+
+        with session_context() as session:
+            tasks = session.exec(
+                select(TaskRun).where(TaskRun.status.in_([TaskStatus.QUEUED, TaskStatus.RUNNING]))
+            ).all()
+
+            for task in tasks:
+                if task.id is None:
+                    continue
+
+                if task.status == TaskStatus.RUNNING:
+                    task.status = TaskStatus.FAILED
+                    task.error_message = "任务因服务重启或异常退出中断，请重新创建任务"
+                else:
+                    task.status = TaskStatus.CANCELLED
+                    task.error_message = "任务在启动前因服务重启或异常退出被取消，请重新创建任务"
+
+                task.finished_at = recovered_at
+                task.current_job = ""
+                session.add(task)
+                session.add(
+                    TaskLog(
+                        task_id=task.id,
+                        level="warning",
+                        message=task.error_message,
+                        context_json=json.dumps({"recoveredAt": recovered_at.isoformat()}, ensure_ascii=False),
+                    )
+                )
+                recovered_count += 1
+
+            if recovered_count:
+                session.commit()
+
+        return recovered_count
+
     def append_log(self, task_id: int, level: str, message: str, context: dict[str, Any] | None = None) -> None:
         payload = json.dumps(context or {}, ensure_ascii=False)
-        with get_session() as session:
+        with session_context() as session:
             session.add(
                 TaskLog(
                     task_id=task_id,
@@ -226,7 +264,7 @@ class TaskRuntimeService:
             return thread is not None and thread.is_alive()
 
     def delete_task(self, task_id: int) -> None:
-        with get_session() as session:
+        with session_context() as session:
             task = session.get(TaskRun, task_id)
             if task is None:
                 raise LookupError("Task not found")
@@ -244,7 +282,7 @@ class TaskRuntimeService:
         self.cleanup_task(task_id)
 
     def delete_account(self, account_id: int) -> None:
-        with get_session() as session:
+        with session_context() as session:
             account = session.get(Account, account_id)
             if account is None:
                 raise LookupError("Account not found")
@@ -289,7 +327,7 @@ class TaskRuntimeService:
 
     def _run_task(self, task_id: int) -> None:
         try:
-            with get_session() as session:
+            with session_context() as session:
                 task = session.get(TaskRun, task_id)
                 if task is None:
                     return
@@ -336,7 +374,7 @@ class TaskRuntimeService:
                 raise LoginError(login_state["msg"])
 
             all_courses = chaoxing.get_course_list()
-            with get_session() as session:
+            with session_context() as session:
                 session_account = session.get(Account, account_data["id"])
                 if session_account is not None:
                     self._store_course_snapshots(session, session_account, all_courses)
@@ -365,7 +403,7 @@ class TaskRuntimeService:
                 process_course(chaoxing, course, common_config)
 
             status = TaskStatus.SUCCEEDED
-            with get_session() as session:
+            with session_context() as session:
                 pending_count = session.exec(
                     select(func.count()).select_from(PendingDecision).where(
                         PendingDecision.task_id == task_id,
@@ -391,7 +429,7 @@ class TaskRuntimeService:
             error_message = str(exc)
             self.append_log(task_id, "error", error_message, {"traceback": traceback.format_exc()})
             self._append_event(task_id, "task_failed", {"message": error_message})
-            with get_session() as session:
+            with session_context() as session:
                 task = session.get(TaskRun, task_id)
                 if task is not None:
                     task.status = TaskStatus.FAILED
@@ -517,7 +555,7 @@ class TaskRuntimeService:
             seq = self._event_counters.get(task_id, self._load_event_seq(task_id)) + 1
             self._event_counters[task_id] = seq
 
-        with get_session() as session:
+        with session_context() as session:
             session.add(
                 TaskEvent(
                     task_id=task_id,
@@ -533,7 +571,7 @@ class TaskRuntimeService:
         if not updates:
             return
 
-        with get_session() as session:
+        with session_context() as session:
             task = session.get(TaskRun, task_id)
             if task is None:
                 return
@@ -550,7 +588,7 @@ class TaskRuntimeService:
             session.commit()
 
     def _load_event_seq(self, task_id: int) -> int:
-        with get_session() as session:
+        with session_context() as session:
             current = session.exec(
                 select(func.max(TaskEvent.seq)).where(TaskEvent.task_id == task_id)
             ).one()

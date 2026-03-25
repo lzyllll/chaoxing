@@ -87,6 +87,8 @@ class BackendSettings:
     runtime_dir: Path
     database_path: Path
     accounts_dir: Path
+    admin_username: str
+    admin_password: str
 
 
 @lru_cache(maxsize=1)
@@ -165,6 +167,26 @@ def get_backend_settings() -> BackendSettings:
         base_dir=base_dir,
         default=runtime_dir / "accounts",
     )
+    admin_username = (
+        _get_option(
+            parser,
+            section="admin",
+            option="username",
+            env_name="CHAOXING_WEB_ADMIN_USERNAME",
+            default="",
+        )
+        or ""
+    )
+    admin_password = (
+        _get_option(
+            parser,
+            section="admin",
+            option="password",
+            env_name="CHAOXING_WEB_ADMIN_PASSWORD",
+            default="",
+        )
+        or ""
+    )
 
     return BackendSettings(
         config_path=config_path,
@@ -175,6 +197,8 @@ def get_backend_settings() -> BackendSettings:
         runtime_dir=runtime_dir,
         database_path=database_path,
         accounts_dir=accounts_dir,
+        admin_username=admin_username,
+        admin_password=admin_password,
     )
 
 

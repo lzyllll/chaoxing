@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
 import sqlite3
+import threading
+from collections.abc import Generator, Iterator
+from contextlib import contextmanager
 
 from sqlmodel import SQLModel, Session, create_engine
 
@@ -12,6 +15,8 @@ DB_PATH = SETTINGS.database_path
 DATABASE_URL = f"sqlite:///{DB_PATH.as_posix()}"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+_db_init_lock = threading.Lock()
+_db_initialized = False
 
 
 def ensure_runtime_dirs() -> None:
@@ -21,14 +26,31 @@ def ensure_runtime_dirs() -> None:
 
 
 def create_db_and_tables() -> None:
+    global _db_initialized
+    if _db_initialized:
+        return
+
+    with _db_init_lock:
+        if _db_initialized:
+            return
+
+        ensure_runtime_dirs()
+        SQLModel.metadata.create_all(engine)
+        migrate_sqlite_schema()
+        _db_initialized = True
+
+
+@contextmanager
+def session_context() -> Iterator[Session]:
     ensure_runtime_dirs()
-    SQLModel.metadata.create_all(engine)
-    migrate_sqlite_schema()
-
-
-def get_session() -> Session:
     create_db_and_tables()
-    return Session(engine)
+    with Session(engine) as session:
+        yield session
+
+
+def get_session() -> Generator[Session, None, None]:
+    with session_context() as session:
+        yield session
 
 
 def migrate_sqlite_schema() -> None:

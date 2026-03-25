@@ -1,8 +1,11 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 
 import AppLayout from '@/layouts/AppLayout.vue'
+import { pinia } from '@/stores/pinia'
+import { useAdminAuthStore } from '@/stores/adminAuth'
 import AccountDetailView from '@/views/accounts/AccountDetailView.vue'
 import AccountsView from '@/views/accounts/AccountsView.vue'
+import AdminLoginView from '@/views/admin/AdminLoginView.vue'
 import DashboardView from '@/views/dashboard/DashboardView.vue'
 import DecisionsView from '@/views/decisions/DecisionsView.vue'
 import NotFoundView from '@/views/NotFoundView.vue'
@@ -11,6 +14,12 @@ import TaskDetailView from '@/views/tasks/TaskDetailView.vue'
 import TasksView from '@/views/tasks/TasksView.vue'
 
 const routes: RouteRecordRaw[] = [
+  {
+    path: '/admin/login',
+    name: 'admin-login',
+    component: AdminLoginView,
+    meta: { title: '管理员登录', public: true },
+  },
   {
     path: '/',
     component: AppLayout,
@@ -70,6 +79,30 @@ const routes: RouteRecordRaw[] = [
 const router = createRouter({
   history: createWebHistory(),
   routes,
+})
+
+router.beforeEach(async (to) => {
+  const authStore = useAdminAuthStore(pinia)
+  await authStore.ensureSession()
+
+  if (to.name === 'admin-login') {
+    if (authStore.authenticated) {
+      const redirect = typeof to.query.redirect === 'string' && to.query.redirect.startsWith('/')
+        ? to.query.redirect
+        : '/'
+      return redirect === to.fullPath ? '/' : redirect
+    }
+    return true
+  }
+
+  if (authStore.requiresLogin) {
+    return {
+      name: 'admin-login',
+      query: { redirect: to.fullPath },
+    }
+  }
+
+  return true
 })
 
 router.afterEach((to) => {

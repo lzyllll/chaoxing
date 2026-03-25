@@ -3,7 +3,7 @@ import json
 from typing import Any
 
 from chaoxing.services.work_answer import WorkQuestionOutcome, WorkSubmissionDecision
-from chaoxing.web.db import get_session
+from chaoxing.web.db import session_context
 from chaoxing.web.models import AnswerRecord, PendingDecision
 
 
@@ -21,7 +21,7 @@ class AnswerRecordService:
         if not task_id or not outcomes:
             return
 
-        with get_session() as session:
+        with session_context() as session:
             records: list[AnswerRecord] = []
             for outcome in outcomes:
                 record = AnswerRecord(

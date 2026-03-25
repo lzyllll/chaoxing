@@ -3,6 +3,8 @@ import { resolveTaskWebSocketUrl } from '@/config/runtime'
 import type {
   AccountItem,
   AccountStudyConfig,
+  AdminLoginPayload,
+  AdminSession,
   AnswerRecordItem,
   CourseItem,
   CreateAccountPayload,
@@ -17,6 +19,21 @@ import type {
 
 export async function getHealth(): Promise<HealthResponse> {
   const { data } = await http.get<HealthResponse>('/health')
+  return data
+}
+
+export async function getAdminSession(): Promise<AdminSession> {
+  const { data } = await http.get<AdminSession>('/admin/session')
+  return data
+}
+
+export async function loginAdmin(payload: AdminLoginPayload): Promise<AdminSession> {
+  const { data } = await http.post<AdminSession>('/admin/login', payload)
+  return data
+}
+
+export async function logoutAdmin(): Promise<AdminSession> {
+  const { data } = await http.post<AdminSession>('/admin/logout')
   return data
 }
 

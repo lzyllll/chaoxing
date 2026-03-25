@@ -102,8 +102,8 @@ http://127.0.0.1:5173
    - `backend` 使用根目录 `Dockerfile` 构建，默认监听 `8000`
    - `frontend` 使用 `frontend/Dockerfile` 构建，负责静态页面和 `/api`、`/ws` 反向代理
    - 运行数据默认持久化到根目录 `./.runtime`
-   - 镜像内默认会生成 `/config/backend.ini`，内容来自 `backend.example.ini`
-   - 如需使用自定义后端配置，可在 `docker-compose.yml` 中取消注释 `./backend.ini:/config/backend.ini:ro`
+   - `docker-compose.yml` 会将根目录 `backend.ini` 挂载到容器内 `/config/backend.ini`
+   - 容器内通过环境变量强制使用 `0.0.0.0:8000`、关闭 reload，并将运行数据写入 `/data`
 
 ### Web 控制台（FastAPI + Vue3 + SQLModel）
 
@@ -152,6 +152,7 @@ http://127.0.0.1:5173
 - 后端配置文件为 `backend.ini`，默认模板为 `backend.example.ini`
 - 前端配置文件为 `frontend/.env`，默认模板为 `frontend/.env.example`
 - 后端监听地址、CORS、SQLite 路径、cookies 存储目录都由 `backend.ini` 控制
+- 如果希望启用 Web 管理员登录，请在 `backend.ini` 的 `[admin]` 节填写 `username` 和 `password`
 - 前端 dev host、dev port、API 基地址、WS 基地址和代理目标都由 `frontend/.env` 控制
 - 也可以直接运行 `.\run-web.ps1`，脚本会分别启动前后端并提示配置文件位置
 

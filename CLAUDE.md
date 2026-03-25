@@ -97,15 +97,6 @@ npm run dev
 .\run-web.ps1
 ```
 
-### Docker
-
-```bash
-# Build and run both frontend + backend
-docker compose up --build -d
-
-# Access at http://127.0.0.1:5173
-```
-
 ### Build Executable
 
 ```bash

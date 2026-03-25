@@ -12,6 +12,7 @@ import {
   NLayoutSider,
   NMenu,
   NSpace,
+  useMessage,
 } from 'naive-ui'
 import {
   CheckmarkCircleOutline,
@@ -25,10 +26,13 @@ import type { MenuOption } from 'naive-ui'
 import { useRoute, useRouter } from 'vue-router'
 
 import { useAppStore } from '@/stores/app'
+import { useAdminAuthStore } from '@/stores/adminAuth'
 
 const route = useRoute()
 const router = useRouter()
+const message = useMessage()
 const appStore = useAppStore()
+const authStore = useAdminAuthStore()
 
 function renderIcon(icon: typeof HomeOutline) {
   return () => h(NIcon, null, { default: () => h(icon) })
@@ -92,6 +96,15 @@ function handleMenuSelect(key: string): void {
 
   void router.push(pathMap[key] ?? '/')
 }
+
+async function handleLogout(): Promise<void> {
+  try {
+    await authStore.logout()
+    await router.push({ name: 'admin-login' })
+  } catch (error) {
+    message.error('退出登录失败')
+  }
+}
 </script>
 
 <template>
@@ -135,7 +148,12 @@ function handleMenuSelect(key: string): void {
               </n-icon>
             </template>
           </n-button>
-          <n-avatar round size="small">管</n-avatar>
+          <n-space align="center" size="small">
+            <n-button v-if="authStore.authEnabled" quaternary size="small" @click="handleLogout">
+              退出登录
+            </n-button>
+            <n-avatar round size="small">{{ authStore.username?.slice(0, 1) || '管' }}</n-avatar>
+          </n-space>
         </n-space>
       </n-layout-header>
 

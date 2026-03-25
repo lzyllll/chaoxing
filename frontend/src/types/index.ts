@@ -15,6 +15,17 @@ export interface HealthResponse {
   version: string
 }
 
+export interface AdminSession {
+  authEnabled: boolean
+  authenticated: boolean
+  username?: string | null
+}
+
+export interface AdminLoginPayload {
+  username: string
+  password: string
+}
+
 export interface AccountItem {
   id: number
   name: string
