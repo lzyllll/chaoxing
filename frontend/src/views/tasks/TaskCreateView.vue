@@ -3,8 +3,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage } from 'naive-ui'
 
-import { createTask, getAccountDetail, getAccounts } from '@/api/client'
-import type { AccountItem } from '@/types'
+import { createTask, getAccountDetail, getAccounts, syncAccountCourses } from '@/api/client'
+import type { AccountItem, CourseItem } from '@/types'
 
 const router = useRouter()
 const message = useMessage()
@@ -12,6 +12,7 @@ const message = useMessage()
 const loading = ref(true)
 const courseLoading = ref(false)
 const submitting = ref(false)
+const syncingCourses = ref(false)
 
 const accounts = ref<AccountItem[]>([])
 const selectedAccountId = ref<number | null>(null)
@@ -43,8 +44,8 @@ async function loadCourses(accountId: number): Promise<void> {
   courseLoading.value = true
   try {
     const detail = await getAccountDetail(accountId)
-    courseOptions.value = detail.courses.map((course) => ({
-      label: course.title,
+    courseOptions.value = detail.courses.map((course: CourseItem) => ({
+      label: `${course.title}${course.teacher ? ` · ${course.teacher}` : ''}`,
       value: course.courseId,
     }))
   } catch (error) {
@@ -52,6 +53,27 @@ async function loadCourses(accountId: number): Promise<void> {
     message.error('加载课程列表失败，请稍后重试')
   } finally {
     courseLoading.value = false
+  }
+}
+
+async function refreshSelectedAccountCourses(): Promise<void> {
+  if (selectedAccountId.value === null) {
+    message.warning('请先选择账号')
+    return
+  }
+
+  syncingCourses.value = true
+  try {
+    const response = await syncAccountCourses(selectedAccountId.value)
+    courseOptions.value = response.detail.courses.map((course: CourseItem) => ({
+      label: `${course.title}${course.teacher ? ` · ${course.teacher}` : ''}`,
+      value: course.courseId,
+    }))
+    message.success(`同步完成，共获取 ${response.summary.courseCount} 门课程`)
+  } catch (error) {
+    message.error('同步课程失败，请检查该账号是否可登录')
+  } finally {
+    syncingCourses.value = false
   }
 }
 
@@ -79,7 +101,7 @@ async function submitTask(): Promise<void> {
     if (maybeAxiosError?.response?.status === 404) {
       message.error('账号不存在，请刷新后重试')
     } else if (maybeAxiosError?.response?.status === 400) {
-      message.error('课程不能为空，请至少选择一门课程')
+      message.error('任务创建失败，请先同步课程并至少选择一门课程')
     } else {
       message.error('创建任务失败，请稍后重试')
     }
@@ -112,6 +134,12 @@ onMounted(async () => {
           </n-form-item>
           <n-form-item label="选择课程">
             <n-spin :show="courseLoading">
+              <n-space justify="space-between" style="margin-bottom: 12px">
+                <n-text depth="3">支持多选课程，按所选顺序依次执行</n-text>
+                <n-button text type="primary" :loading="syncingCourses" @click="refreshSelectedAccountCourses">
+                  重新同步课程
+                </n-button>
+              </n-space>
               <n-checkbox-group v-model:value="selectedCourses">
                 <n-space vertical>
                   <n-checkbox v-for="option in courseOptions" :key="option.value" :value="option.value">
@@ -135,7 +163,7 @@ onMounted(async () => {
     <n-grid-item>
       <n-card title="执行策略" :bordered="false">
         <n-alert type="info" show-icon>
-          当前页面已接入真实账号、课程与任务创建接口。
+          当前页面会直接创建后台刷课任务，并在详情页通过 WebSocket 查看视频进度与答题情况。
         </n-alert>
         <n-list bordered style="margin-top: 16px">
           <n-list-item>支持多账号独立配置 cookies 与答题策略</n-list-item>

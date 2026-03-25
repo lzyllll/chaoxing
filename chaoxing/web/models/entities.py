@@ -109,6 +109,8 @@ class AnswerRecord(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     task_id: int = Field(index=True)
     work_job_id: str = Field(index=True)
+    course_title: str = ""
+    chapter_title: str = ""
     question_id: str = Field(index=True)
     question_type: str
     question_title: str

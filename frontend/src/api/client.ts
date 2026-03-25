@@ -1,4 +1,5 @@
 import { http } from '@/api/http'
+import { resolveTaskWebSocketUrl } from '@/config/runtime'
 import type {
   AccountItem,
   AccountStudyConfig,
@@ -11,6 +12,7 @@ import type {
   TaskEventItem,
   TaskLogItem,
   TaskSummary,
+  UpdateAccountPayload,
 } from '@/types'
 
 export async function getHealth(): Promise<HealthResponse> {
@@ -47,6 +49,38 @@ export async function getAccountDetail(accountId: number): Promise<{
   return data
 }
 
+export async function updateAccount(
+  accountId: number,
+  payload: UpdateAccountPayload,
+): Promise<{
+  account: AccountItem
+  config: AccountStudyConfig
+  courses: CourseItem[]
+}> {
+  const { data } = await http.put(`/accounts/${accountId}`, payload)
+  return data
+}
+
+export async function syncAccountCourses(accountId: number): Promise<{
+  summary: {
+    accountId: number
+    courseCount: number
+    fetchedAt?: string | null
+  }
+  detail: {
+    account: AccountItem
+    config: AccountStudyConfig
+    courses: CourseItem[]
+  }
+}> {
+  const { data } = await http.post(`/accounts/${accountId}/sync-courses`)
+  return data
+}
+
+export async function deleteAccount(accountId: number): Promise<void> {
+  await http.delete(`/accounts/${accountId}`)
+}
+
 export async function getTasks(): Promise<TaskSummary[]> {
   const { data } = await http.get<TaskSummary[]>('/tasks')
   return data
@@ -67,12 +101,15 @@ export async function getTaskDetail(taskId: number): Promise<{
   return data
 }
 
+export async function deleteTask(taskId: number): Promise<void> {
+  await http.delete(`/tasks/${taskId}`)
+}
+
 export async function getPendingDecisions(): Promise<PendingDecisionItem[]> {
   const { data } = await http.get<PendingDecisionItem[]>('/decisions')
   return data
 }
 
 export function createTaskWebSocket(taskId: number): WebSocket {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return new WebSocket(`${protocol}//${window.location.host}/ws/tasks/${taskId}`)
+  return new WebSocket(resolveTaskWebSocketUrl(taskId))
 }

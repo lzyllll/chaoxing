@@ -1,6 +1,7 @@
 import axios from 'axios'
+import { frontendRuntime } from '@/config/runtime'
 
 export const http = axios.create({
-  baseURL: '/api',
-  timeout: 15000,
+  baseURL: frontendRuntime.apiBaseUrl,
+  timeout: frontendRuntime.apiTimeoutMs,
 })

@@ -19,6 +19,8 @@ export interface AccountItem {
   id: number
   name: string
   username: string
+  passwordEncrypted?: string
+  cookiesPath?: string
   status: 'active' | 'disabled'
   lastLoginAt?: string | null
   updatedAt: string
@@ -35,6 +37,7 @@ export interface AccountStudyConfig {
   minCoverRate: number
   allowAiAutoSubmit: boolean
   lowConfidenceAction: LowConfidenceAction
+  providerConfigJson?: string
 }
 
 export interface CourseItem {
@@ -84,9 +87,13 @@ export interface TaskLogItem {
 export interface AnswerRecordItem {
   id: number
   taskId: number
+  courseTitle?: string
+  chapterTitle?: string
   questionId: string
   questionType: string
   questionTitle: string
+  options?: string[]
+  candidateAnswers?: string[]
   finalAnswer: string
   answerSource: string
   confidence: number
@@ -115,4 +122,8 @@ export interface CreateAccountPayload {
 export interface CreateTaskPayload {
   accountId: number
   selectedCourses: string[]
+}
+
+export interface UpdateAccountPayload extends CreateAccountPayload {
+  config: AccountStudyConfig
 }

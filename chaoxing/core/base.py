@@ -32,7 +32,7 @@ from chaoxing.utils.decode import (
     decode_questions_info,
 )
 from chaoxing.core.exceptions import MaxRetryExceeded
-from chaoxing.web.services import AnswerRecordService
+from chaoxing.web.services.answer_records import AnswerRecordService
 
 
 def get_timestamp():
@@ -106,6 +106,16 @@ class Chaoxing:
         self.rate_limiter = RateLimiter(0.5) # 其他接口速率限制比较松
         self.video_log_limiter = RateLimiter(2) # 上报进度极其容易卡验证码，限制2s一次
 
+    def emit_event(self, event_type: str, payload: Optional[dict] = None) -> None:
+        callback = self.kwargs.get("event_callback")
+        if callable(callback):
+            callback(event_type, payload or {})
+
+    def emit_log(self, level: str, message: str, context: Optional[dict] = None) -> None:
+        callback = self.kwargs.get("log_callback")
+        if callable(callback):
+            callback(level, message, context or {})
+
     def reload_cookies(self):
         self.session.cookies.clear()
         self.session.cookies.update(use_cookies(self.cookies_path))
@@ -123,14 +133,17 @@ class Chaoxing:
     def login(self, login_with_cookies=False):
         if login_with_cookies:
             logger.info("Logging in with cookies")
+            self.emit_log("info", "尝试使用 cookies 登录")
             self.reload_cookies()
             logger.debug(f"Logged in with cookies: {self.session.cookies}")
             if not self._validate_cookie_session():
                 logger.warning("Cookie 登录校验失败，尝试使用账号密码重新登录")
+                self.emit_log("warning", "Cookies 登录校验失败，尝试账号密码重登")
                 if self.account and self.account.username and self.account.password:
                     return self.login(login_with_cookies=False)
                 return {"status": False, "msg": "cookies 已失效，请更新 cookies 或提供账号密码"}
             logger.info("登录成功...")
+            self.emit_log("info", "Cookies 登录成功")
             return {"status": True, "msg": "登录成功"}
 
         _session = build_session()
@@ -147,12 +160,14 @@ class Chaoxing:
             "independentId": 0,
         }
         logger.trace("正在尝试登录...")
+        self.emit_log("info", "尝试使用账号密码登录")
         resp = _session.post(_url, headers=gc.HEADERS, data=_data)
         if resp and resp.json()["status"] == True:
             save_cookies(_session, self.cookies_path)
             self.session.cookies.clear()
             self.session.cookies.update(_session.cookies.get_dict())
             logger.info("登录成功...")
+            self.emit_log("info", "账号密码登录成功")
             return {"status": True, "msg": "登录成功"}
         else:
             return {"status": False, "msg": str(resp.json()["msg2"])}
@@ -224,6 +239,7 @@ class Chaoxing:
             }
             _resp = _session.post(_url, data=_data)
             course_list += decode_course_list(_resp.text)
+        self.emit_event("course_list_loaded", {"count": len(course_list)})
         return course_list
 
     def get_course_point(self, _courseid, _clazzid, _cpi):
@@ -446,7 +462,16 @@ class Chaoxing:
         return None
 
 
-    def study_video(self, _course, _job, _job_info, _speed: float = 1.0, _type: Literal["Video", "Audio"] = "Video") -> StudyResult:
+    def study_video(
+        self,
+        _course,
+        _job,
+        _job_info,
+        _speed: float = 1.0,
+        _type: Literal["Video", "Audio"] = "Video",
+        *,
+        _chapter_title: str = "",
+    ) -> StudyResult:
         _session = self.session
 
         headers = gc.VIDEO_HEADERS if _type == "Video" else gc.AUDIO_HEADERS
@@ -472,6 +497,20 @@ class Chaoxing:
         wait_time = int(random.uniform(30, 90))
 
         logger.info(f"开始任务: {_job['name']}, 总时长: {duration}s, 已进行: {play_time}s")
+        self.emit_event(
+            "video_started",
+            {
+                "courseId": _course.get("courseId"),
+                "courseTitle": _course.get("title"),
+                "chapterTitle": _chapter_title,
+                "jobId": _job.get("jobid"),
+                "jobName": _job.get("name"),
+                "mediaType": _type.lower(),
+                "duration": duration,
+                "playingTime": play_time,
+                "progressPct": round((play_time / duration) * 100, 2) if duration else 0.0,
+            },
+        )
 
         pbar = tqdm(total=duration, initial=play_time, desc=_job["name"],
                     unit_scale=True, bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}')
@@ -484,6 +523,20 @@ class Chaoxing:
 
         if passed:
             logger.info("任务瞬间完成: {}", _job['name'])
+            self.emit_event(
+                "video_completed",
+                {
+                    "courseId": _course.get("courseId"),
+                    "courseTitle": _course.get("title"),
+                    "chapterTitle": _chapter_title,
+                    "jobId": _job.get("jobid"),
+                    "jobName": _job.get("name"),
+                    "mediaType": _type.lower(),
+                    "duration": duration,
+                    "playingTime": duration,
+                    "progressPct": 100.0,
+                },
+            )
             return StudyResult.SUCCESS
 
         while not passed:
@@ -526,11 +579,40 @@ class Chaoxing:
             last_iter = time.time()
             play_time = min(duration, play_time+dt)
 
+            self.emit_event(
+                "video_progress",
+                {
+                    "courseId": _course.get("courseId"),
+                    "courseTitle": _course.get("title"),
+                    "chapterTitle": _chapter_title,
+                    "jobId": _job.get("jobid"),
+                    "jobName": _job.get("name"),
+                    "mediaType": _type.lower(),
+                    "duration": duration,
+                    "playingTime": round(play_time, 2),
+                    "progressPct": round((play_time / duration) * 100, 2) if duration else 0.0,
+                },
+            )
+
             pbar.n = int(play_time)
             pbar.refresh()
             time.sleep(gc.THRESHOLD)
 
         logger.info("任务完成: {}", _job['name'])
+        self.emit_event(
+            "video_completed",
+            {
+                "courseId": _course.get("courseId"),
+                "courseTitle": _course.get("title"),
+                "chapterTitle": _chapter_title,
+                "jobId": _job.get("jobid"),
+                "jobName": _job.get("name"),
+                "mediaType": _type.lower(),
+                "duration": duration,
+                "playingTime": duration,
+                "progressPct": 100.0,
+            },
+        )
         return StudyResult.SUCCESS
 
     def study_document(self, _course, _job) -> StudyResult:
@@ -565,7 +647,7 @@ class Chaoxing:
         else:
             return StudyResult.SUCCESS
 
-    def study_work(self, _course, _job, _job_info) -> StudyResult:
+    def study_work(self, _course, _job, _job_info, *, _chapter_title: str = "") -> StudyResult:
         if self.tiku.DISABLE or not self.tiku:
             return StudyResult.SUCCESS
 
@@ -651,11 +733,28 @@ class Chaoxing:
         submission = decide_submission(outcomes, answer_policy, self.tiku, self.rollback_times)
         logger.info(f"章节检测题库覆盖率： {submission.cover_rate * 100:.0f}%")
         logger.info(f"章节检测平均置信度： {submission.average_confidence * 100:.0f}%")
+        self.emit_event(
+            "answer_submission",
+            {
+                "courseId": _course.get("courseId"),
+                "courseTitle": _course.get("title"),
+                "chapterTitle": _chapter_title,
+                "jobId": _job.get("jobid"),
+                "questionCount": len(outcomes),
+                "decision": submission.decision,
+                "reason": submission.reason,
+                "coverRate": submission.cover_rate,
+                "averageConfidence": submission.average_confidence,
+                "requiresManualReview": submission.requires_manual_review,
+            },
+        )
         questions["pyFlag"] = submission.py_flag
 
         self.answer_record_service.save_work_outcomes(
             task_id=self._resolve_task_id(),
             work_job_id=str(_job.get("jobid", "")),
+            course_title=str(_course.get("title", "")),
+            chapter_title=_chapter_title,
             outcomes=outcomes,
             submission=submission,
         )

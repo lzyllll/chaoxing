@@ -77,43 +77,64 @@ uv run --python 3.13 main.py -c config.ini
 3. (可选配置文件运行) 下载config_template.ini文件保存为config.ini文件，修改文件内的账号密码内容, 执行 `./chaoxing.exe -c config.ini`
 4. (可选命令行运行)`./chaoxing.exe -u "手机号" -p "密码" -l 课程ID1,课程ID2,课程ID3...(可选) -a [retry|ask|continue](可选)`
 
-### Docker运行
-1. 构建Docker镜像
-   ```bash
-   docker build -t chaoxing .
-   ```
+### Docker运行（Web 控制台）
+当前 Docker 部署已调整为 `frontend` 和 `backend` 两个服务：
 
-2. 运行Docker容器
-   ```bash
-   # 直接运行（将使用默认配置模板）
-   docker run -it chaoxing
-   
-   # 使用自定义配置文件运行
-   docker run -it -v /本地路径/config.ini:/config/config.ini chaoxing
-   ```
+1. （可选）准备自定义后端配置
 
-3. 配置说明
-   - Docker版本默认使用挂载到 `/config/config.ini` 的配置文件
-   - 首次运行时，会自动将 `config_template.ini` 复制到该位置作为模板
-   - 可以将本地编辑好的配置文件挂载到容器中，按照上述示例命令操作
+```bash
+copy backend.example.ini backend.ini
+```
+
+2. 构建并启动服务
+
+```bash
+docker compose up --build -d
+```
+
+3. 打开浏览器访问
+
+```text
+http://127.0.0.1:5173
+```
+
+4. 说明
+   - `backend` 使用根目录 `Dockerfile` 构建，默认监听 `8000`
+   - `frontend` 使用 `frontend/Dockerfile` 构建，负责静态页面和 `/api`、`/ws` 反向代理
+   - 运行数据默认持久化到根目录 `./.runtime`
+   - 镜像内默认会生成 `/config/backend.ini`，内容来自 `backend.example.ini`
+   - 如需使用自定义后端配置，可在 `docker-compose.yml` 中取消注释 `./backend.ini:/config/backend.ini:ro`
 
 ### Web 控制台（FastAPI + Vue3 + SQLModel）
 
 后端使用 `FastAPI + SQLModel + SQLite` 保存账号、课程快照和任务记录，前端使用 `Vue3 + Vite` 提供多账号、多课程选择界面。
 
-1. 安装后端依赖
+1. 准备各自配置文件
+
+```bash
+copy backend.example.ini backend.ini
+copy frontend\.env.example frontend\.env
+```
+
+2. 安装后端依赖
 
 ```bash
 pip install -r requirements.txt
 ```
 
-2. 启动后端 API
+3. 启动后端 API
 
 ```bash
-uvicorn web_api:app --reload
+python web_api.py
 ```
 
-3. 启动前端
+或使用 `uv`：
+
+```bash
+uv run --python 3.13 web_api.py
+```
+
+4. 启动前端
 
 ```bash
 cd frontend
@@ -121,27 +142,34 @@ npm install
 npm run dev
 ```
 
-4. 打开浏览器访问
+5. 打开浏览器访问
 
 ```text
 http://127.0.0.1:5173
 ```
 
 说明：
-- 后端默认运行在 `http://127.0.0.1:8000`
-- SQLite 数据库文件保存在 `.runtime/chaoxing-web.sqlite3`
-- 每个账号的 cookies 会按账号隔离保存到 `.runtime/accounts/<account_id>/cookies.txt`
+- 后端配置文件为 `backend.ini`，默认模板为 `backend.example.ini`
+- 前端配置文件为 `frontend/.env`，默认模板为 `frontend/.env.example`
+- 后端监听地址、CORS、SQLite 路径、cookies 存储目录都由 `backend.ini` 控制
+- 前端 dev host、dev port、API 基地址、WS 基地址和代理目标都由 `frontend/.env` 控制
+- 也可以直接运行 `.\run-web.ps1`，脚本会分别启动前后端并提示配置文件位置
 
 ### 题库配置说明
 
-在你的配置文件中找到`[tiku]`，按照注释填写想要使用的题库名（即`provider`，大小写要一致），并填写必要信息，如token，然后在启动时添加`-c [你的配置文件路径]`即可。
+命令行版与 Web 版现在各自使用独立配置：
 
-题库会默认使用根目录下的`config.ini`文件中的配置，所以你可以复制配置模板（参照前面的说明）命名为`config.ini`，并只配置题库项`[tiku]`，这样即使你不填写账号之类的信息，不使用`-c`参数指定配置文件，题库也会根据这个配置文件自动配置并启用。
+- 命令行版 `main.py` 继续使用根目录 `config.ini`
+- Web 后端默认从 `backend.ini` 的 `[tiku]` 节读取默认题库配置
+
+在对应配置文件中找到 `[tiku]`，按照注释填写想要使用的题库名（即 `provider`，大小写要一致），并填写必要信息，如 token。
+
+对于 Web 控制台，账号页面中的 `Answer Provider` 和 `Provider 附加配置(JSON)` 会覆盖 `backend.ini` 里的默认 `[tiku]` 配置；如果留空，则沿用 `backend.ini` 中的默认值。
 
 对于那些有章节检测且任务点需要解锁的课程，必须配置题库。
 
 **提交模式与答题**
-不配置题库（既不提供配置文件，也没有放置默认配置文件`config.ini`或填写要使用的题库）视为不使用题库，对于章节检测等需要答题的任务会自动跳过。
+不配置题库（命令行版没有 `config.ini`，或 Web 版没有在 `backend.ini` / 账号配置中填写题库）视为不使用题库，对于章节检测等需要答题的任务会自动跳过。
 题库覆盖率：搜到的题目占总题目的比例
 提交模式`submit`值为
 

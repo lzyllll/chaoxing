@@ -145,6 +145,7 @@ poetry.lock
 cookies.txt
 .config.ini
 config.ini
+backend.ini
 chaoxing.log
 config*.ini
 .chaoxing.log

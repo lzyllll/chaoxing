@@ -87,6 +87,8 @@ class WebQueryService:
                 "id": account.id,
                 "name": account.name,
                 "username": account.username,
+                "passwordEncrypted": account.password_encrypted,
+                "cookiesPath": account.cookies_path,
                 "status": account.status,
                 "lastLoginAt": self._iso(account.last_login_at),
                 "updatedAt": self._iso(account.updated_at),
@@ -102,6 +104,7 @@ class WebQueryService:
                 "minCoverRate": config.min_cover_rate if config else 0.7,
                 "allowAiAutoSubmit": config.allow_ai_auto_submit if config else False,
                 "lowConfidenceAction": config.low_confidence_action if config else "pause",
+                "providerConfigJson": config.provider_config_json if config else "{}",
             },
             "courses": [
                 {
@@ -175,9 +178,13 @@ class WebQueryService:
                 {
                     "id": answer.id,
                     "taskId": answer.task_id,
+                    "courseTitle": answer.course_title,
+                    "chapterTitle": answer.chapter_title,
                     "questionId": answer.question_id,
                     "questionType": answer.question_type,
                     "questionTitle": answer.question_title,
+                    "options": self._from_json(answer.options_json, default=[]),
+                    "candidateAnswers": self._from_json(answer.candidate_answers_json, default=[]),
                     "finalAnswer": answer.final_answer,
                     "answerSource": answer.answer_source,
                     "confidence": answer.confidence,

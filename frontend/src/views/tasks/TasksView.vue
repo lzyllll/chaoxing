@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, h, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { NButton, NPopconfirm, NSpace, useMessage } from 'naive-ui'
 
-import { getTasks } from '@/api/client'
+import { deleteTask, getTasks } from '@/api/client'
 import type { TaskSummary } from '@/types'
 import { formatDateTime, formatPercent } from '@/utils/format'
 
 const router = useRouter()
+const message = useMessage()
 const loading = ref(true)
 const tasks = ref<TaskSummary[]>([])
+const deletingTaskId = ref<number | null>(null)
+let timer: number | null = null
 
 const columns = computed(() => [
   { title: '任务 ID', key: 'id' },
@@ -29,15 +33,84 @@ const columns = computed(() => [
     key: 'createdAt',
     render: (row: TaskSummary) => formatDateTime(row.createdAt),
   },
+  {
+    title: '操作',
+    key: 'actions',
+    render: (row: TaskSummary) =>
+      h(NSpace, { size: 'small' }, {
+        default: () => [
+          h(
+            NButton,
+            {
+              size: 'small',
+              secondary: true,
+              onClick: () => openTask(row.id),
+            },
+            { default: () => '查看' },
+          ),
+          h(
+            NPopconfirm,
+            {
+              onPositiveClick: () => handleDeleteTask(row),
+            },
+            {
+              trigger: () =>
+                h(
+                  NButton,
+                  {
+                    size: 'small',
+                    type: 'error',
+                    ghost: true,
+                    loading: deletingTaskId.value === row.id,
+                  },
+                  { default: () => '删除' },
+                ),
+              default: () => `删除任务 #${row.id} 及其运行记录？`,
+            },
+          ),
+        ],
+      }),
+  },
 ])
 
-onMounted(async () => {
+async function loadTasks(): Promise<void> {
   tasks.value = await getTasks()
   loading.value = false
+}
+
+onMounted(async () => {
+  await loadTasks()
+  timer = window.setInterval(() => {
+    void loadTasks()
+  }, 5000)
+})
+
+onBeforeUnmount(() => {
+  if (timer !== null) {
+    window.clearInterval(timer)
+  }
 })
 
 function openTask(taskId: number): void {
   void router.push(`/tasks/${taskId}`)
+}
+
+async function handleDeleteTask(task: TaskSummary): Promise<void> {
+  deletingTaskId.value = task.id
+  try {
+    await deleteTask(task.id)
+    message.success('任务已删除')
+    await loadTasks()
+  } catch (error: unknown) {
+    const maybeAxiosError = error as { response?: { status?: number; data?: { detail?: string } } }
+    if (maybeAxiosError?.response?.status === 409) {
+      message.error(maybeAxiosError.response.data?.detail ?? '运行中的任务不能删除')
+    } else {
+      message.error('删除任务失败')
+    }
+  } finally {
+    deletingTaskId.value = null
+  }
 }
 </script>
 
@@ -59,6 +132,22 @@ function openTask(taskId: number): void {
             <n-progress type="line" :percentage="Math.round(task.progressPct)" />
             <n-text depth="3">当前课程：{{ task.currentCourse || '--' }}</n-text>
             <n-text depth="3">当前章节：{{ task.currentChapter || '--' }}</n-text>
+            <n-space justify="end">
+              <n-popconfirm @positive-click="handleDeleteTask(task)">
+                <template #trigger>
+                  <n-button
+                    size="small"
+                    type="error"
+                    ghost
+                    :loading="deletingTaskId === task.id"
+                    @click.stop
+                  >
+                    删除
+                  </n-button>
+                </template>
+                删除任务 #{{ task.id }} 及其运行记录？
+              </n-popconfirm>
+            </n-space>
           </n-space>
         </n-card>
       </n-grid-item>

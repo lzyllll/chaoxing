@@ -50,12 +50,29 @@ def sanitize_common_config(common_config: dict[str, Any]) -> dict[str, Any]:
     return common_config
 
 
+def sanitize_tiku_config(tiku_config: dict[str, Any]) -> dict[str, Any]:
+    payload = dict(tiku_config)
+    for key in ("delay", "cover_rate"):
+        if key not in payload:
+            continue
+        try:
+            payload[key] = float(payload[key])
+        except (TypeError, ValueError):
+            if key == "delay":
+                payload[key] = 0.0
+            elif key == "cover_rate":
+                payload[key] = 0.8
+    return payload
+
+
 def init_chaoxing(
     common_config: dict[str, Any],
     tiku_config: dict[str, Any],
     prompt: PromptFunc = input,
+    **kwargs: Any,
 ) -> Chaoxing:
     """初始化超星实例。"""
+    tiku_config = sanitize_tiku_config(tiku_config)
     username = common_config.get("username", "")
     password = common_config.get("password", "")
     use_cookies = common_config.get("use_cookies", False)
@@ -84,40 +101,136 @@ def init_chaoxing(
                 logger.info("用户选择继续运行...")
 
     query_delay = tiku_config.get("delay", 0)
-    return Chaoxing(account=account, tiku=tiku, query_delay=query_delay)
+    runtime_kwargs = dict(kwargs)
+    runtime_kwargs.setdefault("query_delay", query_delay)
+    return Chaoxing(account=account, tiku=tiku, **runtime_kwargs)
 
 
 def process_job(
     chaoxing: Chaoxing,
     course: dict[str, Any],
+    point: dict[str, Any],
     job: dict[str, Any],
     job_info: dict[str, Any],
     speed: float,
 ) -> StudyResult:
     """处理单个任务点。"""
+    chaoxing.emit_event(
+        "job_started",
+        {
+            "courseId": course.get("courseId"),
+            "courseTitle": course.get("title"),
+            "chapterId": point.get("id"),
+            "chapterTitle": point.get("title"),
+            "jobId": job.get("jobid"),
+            "jobName": job.get("name"),
+            "jobType": job.get("type"),
+        },
+    )
+
     if job["type"] == "video":
         logger.trace(f"识别到视频任务, 任务章节: {course['title']} 任务ID: {job['jobid']}")
-        video_result = chaoxing.study_video(course, job, job_info, _speed=speed, _type="Video")
+        chaoxing.emit_log("info", f"开始处理视频任务：{job.get('name')}", {"jobId": job.get("jobid")})
+        video_result = chaoxing.study_video(
+            course,
+            job,
+            job_info,
+            _speed=speed,
+            _type="Video",
+            _chapter_title=point.get("title", ""),
+        )
         if video_result.is_failure():
             logger.warning("当前任务非视频任务, 正在尝试音频任务解码")
-            video_result = chaoxing.study_video(course, job, job_info, _speed=speed, _type="Audio")
+            video_result = chaoxing.study_video(
+                course,
+                job,
+                job_info,
+                _speed=speed,
+                _type="Audio",
+                _chapter_title=point.get("title", ""),
+            )
         if video_result.is_failure():
             logger.warning(
                 f"出现异常任务 -> 任务章节: {course['title']} 任务ID: {job['jobid']}, 已跳过"
+            )
+            chaoxing.emit_log("warning", f"视频任务处理失败：{job.get('name')}", {"jobId": job.get("jobid")})
+            chaoxing.emit_event(
+                "job_failed",
+                {
+                    "courseId": course.get("courseId"),
+                    "courseTitle": course.get("title"),
+                    "chapterId": point.get("id"),
+                    "chapterTitle": point.get("title"),
+                    "jobId": job.get("jobid"),
+                    "jobName": job.get("name"),
+                    "jobType": job.get("type"),
+                },
+            )
+        else:
+            chaoxing.emit_event(
+                "job_completed",
+                {
+                    "courseId": course.get("courseId"),
+                    "courseTitle": course.get("title"),
+                    "chapterId": point.get("id"),
+                    "chapterTitle": point.get("title"),
+                    "jobId": job.get("jobid"),
+                    "jobName": job.get("name"),
+                    "jobType": job.get("type"),
+                },
             )
         return video_result
 
     if job["type"] == "document":
         logger.trace(f"识别到文档任务, 任务章节: {course['title']} 任务ID: {job['jobid']}")
-        return chaoxing.study_document(course, job)
+        result = chaoxing.study_document(course, job)
+        chaoxing.emit_event(
+            "job_completed" if result.is_success() else "job_failed",
+            {
+                "courseId": course.get("courseId"),
+                "courseTitle": course.get("title"),
+                "chapterId": point.get("id"),
+                "chapterTitle": point.get("title"),
+                "jobId": job.get("jobid"),
+                "jobName": job.get("name"),
+                "jobType": job.get("type"),
+            },
+        )
+        return result
 
     if job["type"] == "workid":
         logger.trace(f"识别到章节检测任务, 任务章节: {course['title']}")
-        return chaoxing.study_work(course, job, job_info)
+        result = chaoxing.study_work(course, job, job_info, _chapter_title=point.get("title", ""))
+        chaoxing.emit_event(
+            "job_completed" if result.is_success() else "job_failed",
+            {
+                "courseId": course.get("courseId"),
+                "courseTitle": course.get("title"),
+                "chapterId": point.get("id"),
+                "chapterTitle": point.get("title"),
+                "jobId": job.get("jobid"),
+                "jobName": job.get("name"),
+                "jobType": job.get("type"),
+            },
+        )
+        return result
 
     if job["type"] == "read":
         logger.trace(f"识别到阅读任务, 任务章节: {course['title']}")
-        return chaoxing.study_read(course, job, job_info)
+        result = chaoxing.study_read(course, job, job_info)
+        chaoxing.emit_event(
+            "job_completed" if result.is_success() else "job_failed",
+            {
+                "courseId": course.get("courseId"),
+                "courseTitle": course.get("title"),
+                "chapterId": point.get("id"),
+                "chapterTitle": point.get("title"),
+                "jobId": job.get("jobid"),
+                "jobName": job.get("name"),
+                "jobType": job.get("type"),
+            },
+        )
+        return result
 
     if job["type"] == "live":
         logger.trace(f"识别到直播任务, 任务章节: {course['title']} 任务ID: {job['jobid']}")
@@ -140,12 +253,38 @@ def process_job(
             )
             thread.start()
             thread.join()
+            chaoxing.emit_event(
+                "job_completed",
+                {
+                    "courseId": course.get("courseId"),
+                    "courseTitle": course.get("title"),
+                    "chapterId": point.get("id"),
+                    "chapterTitle": point.get("title"),
+                    "jobId": job.get("jobid"),
+                    "jobName": job.get("name"),
+                    "jobType": job.get("type"),
+                },
+            )
             return StudyResult.SUCCESS
         except Exception as e:
             logger.error(f"处理直播任务时出错: {str(e)}")
+            chaoxing.emit_log("error", f"直播任务处理失败：{e}", {"jobId": job.get("jobid")})
+            chaoxing.emit_event(
+                "job_failed",
+                {
+                    "courseId": course.get("courseId"),
+                    "courseTitle": course.get("title"),
+                    "chapterId": point.get("id"),
+                    "chapterTitle": point.get("title"),
+                    "jobId": job.get("jobid"),
+                    "jobName": job.get("name"),
+                    "jobType": job.get("type"),
+                },
+            )
             return StudyResult.ERROR
 
     logger.error(f"未知任务类型: {job['type']}")
+    chaoxing.emit_log("error", f"未知任务类型：{job.get('type')}", {"jobId": job.get("jobid")})
     return StudyResult.ERROR
 
 
@@ -268,35 +407,99 @@ def process_chapter(
 ) -> ChapterResult:
     """处理单个章节。"""
     logger.info(f'当前章节: {point["title"]}')
+    chaoxing.emit_event(
+        "chapter_started",
+        {
+            "courseId": course.get("courseId"),
+            "courseTitle": course.get("title"),
+            "chapterId": point.get("id"),
+            "chapterTitle": point.get("title"),
+            "hasFinished": point.get("has_finished", False),
+        },
+    )
+    chaoxing.emit_log("info", f"开始处理章节：{point.get('title')}")
     if point["has_finished"]:
         logger.info(f'章节：{point["title"]} 已完成所有任务点')
+        chaoxing.emit_event(
+            "chapter_completed",
+            {
+                "courseId": course.get("courseId"),
+                "courseTitle": course.get("title"),
+                "chapterId": point.get("id"),
+                "chapterTitle": point.get("title"),
+                "alreadyFinished": True,
+            },
+        )
         return ChapterResult.SUCCESS
 
     chaoxing.rate_limiter.limit_rate(random_time=True, random_min=0, random_max=0.2)
     jobs, job_info = chaoxing.get_job_list(course, point)
 
     if job_info.get("notOpen", False):
+        chaoxing.emit_event(
+            "chapter_not_open",
+            {
+                "courseId": course.get("courseId"),
+                "courseTitle": course.get("title"),
+                "chapterId": point.get("id"),
+                "chapterTitle": point.get("title"),
+            },
+        )
         return ChapterResult.NOT_OPEN
 
     job_results: list[StudyResult] = []
     with ThreadPoolExecutor(max_workers=5) as executor:
         for result in executor.map(
-            lambda job: process_job(chaoxing, course, job, job_info, speed),
+            lambda job: process_job(chaoxing, course, point, job, job_info, speed),
             jobs,
         ):
             job_results.append(result)
 
     for result in job_results:
         if result.is_failure():
+            chaoxing.emit_event(
+                "chapter_failed",
+                {
+                    "courseId": course.get("courseId"),
+                    "courseTitle": course.get("title"),
+                    "chapterId": point.get("id"),
+                    "chapterTitle": point.get("title"),
+                },
+            )
             return ChapterResult.ERROR
 
+    chaoxing.emit_event(
+        "chapter_completed",
+        {
+            "courseId": course.get("courseId"),
+            "courseTitle": course.get("title"),
+            "chapterId": point.get("id"),
+            "chapterTitle": point.get("title"),
+            "alreadyFinished": False,
+        },
+    )
     return ChapterResult.SUCCESS
 
 
-def process_course(chaoxing: Chaoxing, course: dict[str, Any], config: dict[str, Any]) -> None:
+def process_course(
+    chaoxing: Chaoxing,
+    course: dict[str, Any],
+    config: dict[str, Any],
+    *,
+    point_list: dict[str, Any] | None = None,
+) -> None:
     """处理单个课程。"""
     logger.info(f"开始学习课程: {course['title']}")
-    point_list = chaoxing.get_course_point(course["courseId"], course["clazzId"], course["cpi"])
+    chaoxing.emit_event(
+        "course_started",
+        {
+            "courseId": course.get("courseId"),
+            "courseTitle": course.get("title"),
+            "clazzId": course.get("clazzId"),
+        },
+    )
+    chaoxing.emit_log("info", f"开始学习课程：{course.get('title')}")
+    point_list = point_list or chaoxing.get_course_point(course["courseId"], course["clazzId"], course["cpi"])
 
     old_format_sizeof = tqdm.format_sizeof
     tqdm.format_sizeof = format_time
@@ -305,9 +508,52 @@ def process_course(chaoxing: Chaoxing, course: dict[str, Any], config: dict[str,
     tasks: list[ChapterTask] = []
     for index, point in enumerate(point_list["points"]):
         tasks.append(ChapterTask(point=point, index=index))
+    chaoxing.emit_event(
+        "course_points_loaded",
+        {
+            "courseId": course.get("courseId"),
+            "courseTitle": course.get("title"),
+            "totalPoints": len(tasks),
+        },
+    )
+    chaoxing.emit_event(
+        "course_chapters_loaded",
+        {
+            "courseId": course.get("courseId"),
+            "courseTitle": course.get("title"),
+            "chapters": [
+                {
+                    "chapterId": point.get("id"),
+                    "chapterTitle": point.get("title"),
+                    "hasFinished": point.get("has_finished", False),
+                }
+                for point in point_list["points"]
+            ],
+        },
+    )
 
-    JobProcessor(chaoxing, course, tasks, config).run()
+    processor = JobProcessor(chaoxing, course, tasks, config)
+    processor.run()
     tqdm.format_sizeof = old_format_sizeof
+    if processor.failed_tasks:
+        failed_titles = [task.point.get("title", "") for task in processor.failed_tasks]
+        chaoxing.emit_event(
+            "course_failed",
+            {
+                "courseId": course.get("courseId"),
+                "courseTitle": course.get("title"),
+                "failedChapters": failed_titles,
+            },
+        )
+        raise RuntimeError(f"课程 {course.get('title')} 存在失败章节：{'、'.join(failed_titles)}")
+    chaoxing.emit_event(
+        "course_completed",
+        {
+            "courseId": course.get("courseId"),
+            "courseTitle": course.get("title"),
+            "totalPoints": len(tasks),
+        },
+    )
 
 
 def filter_courses(

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, h, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { NButton, NInput, NSpace, NTag, useMessage } from 'naive-ui'
+import { NButton, NInput, NPopconfirm, NSpace, NTag, useMessage } from 'naive-ui'
 
-import { createAccount, getAccounts } from '@/api/client'
+import { createAccount, deleteAccount, getAccounts } from '@/api/client'
 import type { AccountItem, CreateAccountPayload } from '@/types'
 import { formatDateTime } from '@/utils/format'
 
@@ -12,6 +12,7 @@ const message = useMessage()
 
 const loading = ref(true)
 const submitting = ref(false)
+const deletingAccountId = ref<number | null>(null)
 const accounts = ref<AccountItem[]>([])
 const showCreateModal = ref(false)
 
@@ -38,15 +39,39 @@ const columns = computed(() => [
     title: '操作',
     key: 'actions',
     render: (row: AccountItem) =>
-      h(
-        NButton,
-        {
-          size: 'small',
-          secondary: true,
-          onClick: () => openAccount(row.id),
-        },
-        { default: () => '查看' },
-      ),
+      h(NSpace, { size: 'small' }, {
+        default: () => [
+          h(
+            NButton,
+            {
+              size: 'small',
+              secondary: true,
+              onClick: () => openAccount(row.id),
+            },
+            { default: () => '查看' },
+          ),
+          h(
+            NPopconfirm,
+            {
+              onPositiveClick: () => handleDeleteAccount(row),
+            },
+            {
+              trigger: () =>
+                h(
+                  NButton,
+                  {
+                    size: 'small',
+                    type: 'error',
+                    ghost: true,
+                    loading: deletingAccountId.value === row.id,
+                  },
+                  { default: () => '删除' },
+                ),
+              default: () => `删除账号“${row.name}”及其历史任务？`,
+            },
+          ),
+        ],
+      }),
   },
 ])
 
@@ -82,6 +107,24 @@ function resetForm(): void {
 function openCreateModal(): void {
   resetForm()
   showCreateModal.value = true
+}
+
+async function handleDeleteAccount(account: AccountItem): Promise<void> {
+  deletingAccountId.value = account.id
+  try {
+    await deleteAccount(account.id)
+    message.success('账号已删除')
+    await loadAccounts()
+  } catch (error: unknown) {
+    const maybeAxiosError = error as { response?: { status?: number; data?: { detail?: string } } }
+    if (maybeAxiosError?.response?.status === 409) {
+      message.error(maybeAxiosError.response.data?.detail ?? '该账号还有运行中的任务，不能删除')
+    } else {
+      message.error('删除账号失败')
+    }
+  } finally {
+    deletingAccountId.value = null
+  }
 }
 
 async function submitCreateAccount(): Promise<void> {
@@ -142,6 +185,22 @@ async function submitCreateAccount(): Promise<void> {
                 {{ item.status }}
               </n-tag>
               <n-text depth="3">{{ item.courseCount }} 门课程</n-text>
+            </n-space>
+            <n-space justify="end">
+              <n-popconfirm @positive-click="handleDeleteAccount(item)">
+                <template #trigger>
+                  <n-button
+                    size="small"
+                    type="error"
+                    ghost
+                    :loading="deletingAccountId === item.id"
+                    @click.stop
+                  >
+                    删除
+                  </n-button>
+                </template>
+                删除账号“{{ item.name }}”及其历史任务？
+              </n-popconfirm>
             </n-space>
           </n-space>
         </n-card>

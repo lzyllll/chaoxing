@@ -1,12 +1,11 @@
-param(
-    [int]$BackendPort = 8000,
-    [int]$FrontendPort = 5173
-)
-
 $ErrorActionPreference = "Stop"
 
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $frontendDir = Join-Path $projectRoot "frontend"
+$backendConfig = Join-Path $projectRoot "backend.ini"
+$backendExample = Join-Path $projectRoot "backend.example.ini"
+$frontendEnv = Join-Path $frontendDir ".env"
+$frontendEnvExample = Join-Path $frontendDir ".env.example"
 
 if (-not (Test-Path $frontendDir)) {
     throw "frontend directory not found: $frontendDir"
@@ -21,7 +20,7 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 
 Write-Host 'Starting backend with uv...'
 uv sync
-uv run --python 3.13 -m uvicorn web_api:app --host 127.0.0.1 --port $BackendPort --reload
+uv run --python 3.13 web_api.py
 "@
 
 $frontendCommand = @"
@@ -29,12 +28,20 @@ cd '$frontendDir'
 if (-not (Test-Path 'node_modules')) {
     npm install
 }
-npm run dev -- --host 127.0.0.1 --port $FrontendPort
+npm run dev
 "@
 
 Start-Process powershell -ArgumentList @('-NoExit', '-Command', $backendCommand) | Out-Null
 Start-Process powershell -ArgumentList @('-NoExit', '-Command', $frontendCommand) | Out-Null
 
-Write-Host "Backend started: http://127.0.0.1:$BackendPort"
-Write-Host "Frontend started: http://127.0.0.1:$FrontendPort"
-Write-Host "Started in two new PowerShell windows."
+Write-Host "Backend config: $backendConfig"
+if (-not (Test-Path $backendConfig) -and (Test-Path $backendExample)) {
+    Write-Host "Tip: copy $backendExample to $backendConfig to customize backend settings."
+}
+
+Write-Host "Frontend config: $frontendEnv"
+if (-not (Test-Path $frontendEnv) -and (Test-Path $frontendEnvExample)) {
+    Write-Host "Tip: copy $frontendEnvExample to $frontendEnv to customize frontend settings."
+}
+
+Write-Host "Started frontend and backend in two new PowerShell windows."

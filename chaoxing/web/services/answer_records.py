@@ -13,6 +13,8 @@ class AnswerRecordService:
         *,
         task_id: int | None,
         work_job_id: str,
+        course_title: str,
+        chapter_title: str,
         outcomes: list[WorkQuestionOutcome],
         submission: WorkSubmissionDecision,
     ) -> None:
@@ -25,6 +27,8 @@ class AnswerRecordService:
                 record = AnswerRecord(
                     task_id=task_id,
                     work_job_id=work_job_id,
+                    course_title=course_title,
+                    chapter_title=chapter_title,
                     question_id=outcome.question_id,
                     question_type=outcome.question_type,
                     question_title=outcome.question_title,
