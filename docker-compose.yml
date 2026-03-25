@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: chaoxing-backend
     restart: unless-stopped
     environment:
       CHAOXING_BACKEND_CONFIG: /config/backend.ini
@@ -13,17 +14,19 @@ services:
       CHAOXING_WEB_DATABASE_PATH: /data/chaoxing-web.sqlite3
       CHAOXING_WEB_ACCOUNTS_DIR: /data/accounts
     volumes:
-      - ./.runtime:/data
       - ./backend.ini:/config/backend.ini:ro
-    ports:
-      - "8000:8000"
+      - ./.runtime:/data
+    expose:
+      - "8000"
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    container_name: chaoxing-frontend
     restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
       - "5173:80"
