@@ -7,9 +7,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+COPY pyproject.toml requirements.txt ./
+COPY uv.lock* ./
+RUN if [ -f uv.lock ]; then uv sync --frozen --no-dev; else uv sync --no-dev; fi
+
 COPY . .
-RUN uv sync --frozen --no-dev
 
 EXPOSE 8000
 
-CMD ["uv", "run", "--frozen", "web_api.py"]
+CMD ["uv", "run", "--no-sync", "web_api.py"]
