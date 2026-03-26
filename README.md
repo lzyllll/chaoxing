@@ -99,7 +99,7 @@ http://127.0.0.1:5173
 ```
 
 4. 说明
-   - `backend` 使用根目录 `Dockerfile` 构建，镜像内通过 `uv sync` 安装依赖，并用 `python web_api.py` 启动
+   - `backend` 使用根目录 `Dockerfile` 构建，镜像内通过 `uv sync` 安装依赖，并用 `uvicorn chaoxing.web.app:app` 启动
    - `frontend` 使用 `frontend/Dockerfile` 构建，负责静态页面和 `/api`、`/ws` 反向代理
    - 运行数据默认持久化到根目录 `./.runtime`
    - `docker-compose.yml` 会将根目录 `backend.ini` 挂载到容器内 `/config/backend.ini`
@@ -125,13 +125,13 @@ pip install -r requirements.txt
 3. 启动后端 API
 
 ```bash
-python web_api.py
+uvicorn chaoxing.web.app:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 或使用 `uv`：
 
 ```bash
-uv run --python 3.13 web_api.py
+uv run -m uvicorn chaoxing.web.app:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 4. 启动前端

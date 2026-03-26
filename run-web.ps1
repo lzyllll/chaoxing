@@ -18,9 +18,10 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     throw 'uv not found. Please install uv first.'
 }
 
-Write-Host 'Starting backend with uv...'
+Write-Host 'Syncing backend dependencies with uv...'
 uv sync
-uv run --python 3.13 web_api.py
+Write-Host 'Starting backend with uvicorn (chaoxing.web.app:app)...'
+uv run -m uvicorn chaoxing.web.app:app --host 127.0.0.1 --port 8000 --reload
 "@
 
 $frontendCommand = @"
@@ -44,4 +45,6 @@ if (-not (Test-Path $frontendEnv) -and (Test-Path $frontendEnvExample)) {
     Write-Host "Tip: copy $frontendEnvExample to $frontendEnv to customize frontend settings."
 }
 
+Write-Host "Backend health: http://127.0.0.1:8000/api/health"
+Write-Host "Frontend URL: http://127.0.0.1:5173"
 Write-Host "Started frontend and backend in two new PowerShell windows."

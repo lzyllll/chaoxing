@@ -27,12 +27,15 @@ __all__ = [
     "AnswerQueryResult",
     "CacheDAO",
     "Tiku",
+    "ChainTiku",
     "TikuYanxi",
     "TikuLike",
     "TikuAdapter",
     "AI",
     "SiliconFlow",
 ]
+
+LLM_PROVIDER_NAMES = {"AI", "SiliconFlow"}
 
 
 @dataclass(slots=True)
@@ -231,18 +234,26 @@ class Tiku:
         result = self.query_with_meta(q_info)
         return result.answer if result.answer is not None else None
 
-    def query_with_meta(self, q_info: dict) -> AnswerQueryResult:
-        if self.DISABLE:
-            return AnswerQueryResult(provider=self.name or "", source="disabled")
-
+    def _prepare_question(self, q_info: dict[str, Any]) -> dict[str, Any]:
         question = dict(q_info)
         logger.debug(f"原始标题：{question['title']}")
         question["title"] = sub(r'^\d+', '', question["title"])
         question["title"] = sub(r'（\d+\.\d+分）$', '', question["title"])
         logger.debug(f"处理后标题：{question['title']}")
+        return question
+
+    def _should_use_cache(self, question: dict[str, Any]) -> bool:
+        return not bool(question.get("_skip_cache"))
+
+    def query_with_meta(self, q_info: dict) -> AnswerQueryResult:
+        if self.DISABLE:
+            return AnswerQueryResult(provider=self.name or "", source="disabled")
+
+        question = self._prepare_question(q_info)
+        use_cache = self._should_use_cache(question)
 
         cache_dao = CacheDAO()
-        cached_answer = cache_dao.get_cache(question["title"])
+        cached_answer = cache_dao.get_cache(question["title"]) if use_cache else None
         if cached_answer:
             cached_answer = cached_answer.strip()
             logger.info(f"从缓存中获取答案：{question['title']} -> {cached_answer}")
@@ -261,7 +272,7 @@ class Tiku:
             normalized_answer = answer.strip() if isinstance(answer, str) else answer
             logger.info(f"从{self.name}获取答案：{question['title']} -> {normalized_answer}")
             if check_answer(normalized_answer, question['type'], self):
-                if isinstance(normalized_answer, str):
+                if use_cache and isinstance(normalized_answer, str):
                     cache_dao.add_cache(question["title"], normalized_answer)
                 return AnswerQueryResult(
                     answer=normalized_answer,
@@ -296,7 +307,7 @@ class Tiku:
         )
 
     def _infer_answer_source(self) -> str:
-        if self.__class__.__name__ in {"AI", "SiliconFlow"}:
+        if self.__class__.__name__ in LLM_PROVIDER_NAMES:
             return "ai"
         return "provider"
 
@@ -334,6 +345,16 @@ class Tiku:
             self.config_set(self._get_conf())
         if self.DISABLE:
             return self
+        provider_chain = normalize_provider_chain(self._conf.get("provider_chain"))
+        config_mode = str(self._conf.get("mode", "")).strip().lower()
+        if len(provider_chain) > 1 or (provider_chain and config_mode == "chain"):
+            chain = ChainTiku()
+            chain.config_set(dict(self._conf))
+            return chain
+        if len(provider_chain) == 1:
+            provider_name = provider_chain[0]
+            provider = create_provider(provider_name, dict(self._conf))
+            return provider
         try:
             cls_name = self._conf['provider']
             if not cls_name:
@@ -342,10 +363,7 @@ class Tiku:
             self.DISABLE = True
             logger.error("未找到题库配置, 已忽略题库功能")
             return self
-        # FIXME: Implement using StrEnum instead. This is not only buggy but also not safe
-        new_cls = globals()[cls_name]()
-        new_cls.config_set(self._conf)
-        return new_cls
+        return create_provider(cls_name, dict(self._conf))
 
     def judgement_select(self, answer: str) -> bool:
         """
@@ -381,6 +399,292 @@ class Tiku:
         默认返回 True（非大模型题库不需要检查）
         """
         return True
+
+    def has_llm_provider(self) -> bool:
+        return self.__class__.__name__ in LLM_PROVIDER_NAMES
+
+    def provider_names(self) -> list[str]:
+        return [self.__class__.__name__]
+
+
+def normalize_provider_chain(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        if text.startswith("["):
+            try:
+                parsed = json.loads(text)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, list):
+                return [str(item).strip() for item in parsed if str(item).strip()]
+        if "->" in text:
+            return [item.strip() for item in text.split("->") if item.strip()]
+        if "," in text:
+            return [item.strip() for item in text.split(",") if item.strip()]
+        return [text]
+    return []
+
+
+def normalize_provider_configs(value: Any) -> dict[str, dict[str, Any]]:
+    if isinstance(value, dict):
+        return {
+            str(provider).strip(): dict(config)
+            for provider, config in value.items()
+            if str(provider).strip() and isinstance(config, dict)
+        }
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return {}
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return {}
+        if isinstance(parsed, dict):
+            return normalize_provider_configs(parsed)
+    return {}
+
+
+def create_provider(provider_name: str, config: dict[str, Any]) -> Tiku:
+    provider_key = str(provider_name).strip()
+    provider_cls = globals().get(provider_key)
+    if provider_cls is None or not issubclass(provider_cls, Tiku):
+        raise KeyError(f"Unsupported provider: {provider_key}")
+    provider = provider_cls()
+    provider_config = dict(config)
+    provider_config["provider"] = provider_key
+    provider.config_set(provider_config)
+    return provider
+
+
+def build_reference_context(reference_answers: Any) -> str:
+    if not isinstance(reference_answers, list) or not reference_answers:
+        return ""
+
+    lines: list[str] = [
+        "其他渠道候选答案如下，仅供参考，请结合题目独立判断，若参考答案明显错误请忽略：",
+    ]
+    for index, item in enumerate(reference_answers, start=1):
+        if not isinstance(item, dict):
+            continue
+        provider = str(item.get("provider", "")).strip() or f"渠道{index}"
+        answer = str(item.get("answer", "")).strip()
+        if not answer:
+            continue
+        confidence = item.get("confidence")
+        confidence_text = ""
+        if isinstance(confidence, (int, float)):
+            confidence_text = f"（置信度 {float(confidence):.0%}）"
+        lines.append(f"{index}. {provider}{confidence_text}: {answer}")
+
+    return "\n".join(lines) if len(lines) > 1 else ""
+
+
+class ChainTiku(Tiku):
+    def __init__(self) -> None:
+        super().__init__()
+        self.name = "组合题库"
+        self.providers: list[Tiku] = []
+        self._provider_chain: list[str] = []
+
+    def _init_tiku(self):
+        provider_chain = normalize_provider_chain(self._conf.get("provider_chain"))
+        if not provider_chain:
+            provider = str(self._conf.get("provider", "")).strip()
+            if provider:
+                provider_chain = [provider]
+        provider_configs = normalize_provider_configs(self._conf.get("provider_configs"))
+
+        self.providers = []
+        self._provider_chain = provider_chain
+        self.name = " -> ".join(provider_chain) if provider_chain else "组合题库"
+        for provider_name in provider_chain:
+            merged_config = dict(self._conf)
+            specific_config = provider_configs.get(provider_name, {})
+            if isinstance(specific_config, dict):
+                merged_config.update(specific_config)
+            provider = create_provider(provider_name, merged_config)
+            provider.init_tiku()
+            self.providers.append(provider)
+
+        if not self.providers:
+            self.DISABLE = True
+            logger.error("组合题库未配置有效 provider，已停用")
+
+    def query_with_meta(self, q_info: dict) -> AnswerQueryResult:
+        if self.DISABLE or not self.providers:
+            return AnswerQueryResult(provider=self.name or "", source="disabled")
+
+        question = self._prepare_question(q_info)
+        use_cache = self._should_use_cache(question)
+        attempts: list[dict[str, Any]] = []
+        matched_results: list[AnswerQueryResult] = []
+        reference_answers: list[dict[str, Any]] = []
+
+        if use_cache:
+            cache_dao = CacheDAO()
+            cached_answer = cache_dao.get_cache(question["title"])
+            if cached_answer:
+                cached_answer = cached_answer.strip()
+                cached_result = AnswerQueryResult(
+                    answer=cached_answer,
+                    source="cache",
+                    confidence=1.0,
+                    candidates=[cached_answer],
+                    raw_response={"cache_hit": True},
+                    provider="Cache",
+                    matched=True,
+                )
+                attempts.append(self._serialize_attempt("Cache", cached_result))
+                matched_results.append(cached_result)
+                reference_answers.append(self._build_reference_item(cached_result))
+
+        for provider in self.providers:
+            provider_question = dict(question)
+            provider_question["_skip_cache"] = True
+            if reference_answers:
+                provider_question["reference_answers"] = list(reference_answers)
+            result = provider.query_with_meta(provider_question)
+            attempts.append(self._serialize_attempt(provider.__class__.__name__, result))
+            if result.matched and result.answer is not None:
+                matched_results.append(result)
+                reference_answers.append(self._build_reference_item(result))
+
+        selected = self._select_result(matched_results)
+        raw_response = {
+            "mode": "chain",
+            "provider_chain": list(self._provider_chain),
+            "attempts": attempts,
+            "selected_provider": selected.provider,
+            "selected_source": selected.source,
+        }
+
+        if selected.matched and isinstance(selected.answer, str) and use_cache:
+            CacheDAO().add_cache(question["title"], selected.answer.strip())
+
+        return AnswerQueryResult(
+            answer=selected.answer,
+            source=selected.source,
+            confidence=selected.confidence,
+            candidates=self._build_chain_candidates(matched_results),
+            raw_response=raw_response,
+            provider=selected.provider,
+            matched=selected.matched,
+        )
+
+    def _select_result(self, matched_results: list[AnswerQueryResult]) -> AnswerQueryResult:
+        if not matched_results:
+            return AnswerQueryResult(
+                answer=None,
+                source="provider",
+                confidence=0.0,
+                candidates=[],
+                raw_response=None,
+                provider=self.name or "",
+                matched=False,
+            )
+
+        ai_results = [item for item in matched_results if item.source == "ai"]
+        if ai_results:
+            selected = ai_results[-1]
+            confidence = selected.confidence
+            corroborations = self._count_corroborations(selected, matched_results)
+            if corroborations >= 1:
+                confidence = min(0.99, confidence + 0.03 * corroborations)
+            return AnswerQueryResult(
+                answer=selected.answer,
+                source=selected.source,
+                confidence=confidence,
+                candidates=list(selected.candidates),
+                raw_response=selected.raw_response,
+                provider=selected.provider,
+                matched=True,
+            )
+
+        grouped: dict[str, list[AnswerQueryResult]] = {}
+        for item in matched_results:
+            grouped.setdefault(self._answer_signature(item.answer), []).append(item)
+        consensus_group = max(grouped.values(), key=len)
+        selected = max(consensus_group, key=lambda item: item.confidence)
+        confidence = selected.confidence
+        if len(consensus_group) > 1:
+            confidence = min(0.99, max(item.confidence for item in consensus_group) + 0.03)
+
+        return AnswerQueryResult(
+            answer=selected.answer,
+            source=selected.source,
+            confidence=confidence,
+            candidates=list(selected.candidates),
+            raw_response=selected.raw_response,
+            provider=selected.provider,
+            matched=True,
+        )
+
+    def _build_chain_candidates(self, matched_results: list[AnswerQueryResult]) -> list[str]:
+        candidates: list[str] = []
+        for item in matched_results:
+            source_candidates = item.candidates or self._build_candidates(item.answer)
+            for candidate in source_candidates:
+                if candidate not in candidates:
+                    candidates.append(candidate)
+        return candidates
+
+    def _answer_signature(self, answer: Any) -> str:
+        if isinstance(answer, list):
+            return "\n".join(sorted(str(item).strip() for item in answer if str(item).strip()))
+        if answer is None:
+            return ""
+        return "\n".join(sorted(part.strip() for part in str(answer).splitlines() if part.strip()))
+
+    def _count_corroborations(self, selected: AnswerQueryResult, matched_results: list[AnswerQueryResult]) -> int:
+        selected_signature = self._answer_signature(selected.answer)
+        return sum(
+            1
+            for item in matched_results
+            if item is not selected and self._answer_signature(item.answer) == selected_signature
+        )
+
+    def _build_reference_item(self, result: AnswerQueryResult) -> dict[str, Any]:
+        return {
+            "provider": result.provider,
+            "source": result.source,
+            "confidence": result.confidence,
+            "answer": self._stringify_answer(result.answer),
+        }
+
+    def _serialize_attempt(self, provider_name: str, result: AnswerQueryResult) -> dict[str, Any]:
+        return {
+            "provider": provider_name,
+            "matched": result.matched,
+            "source": result.source,
+            "confidence": result.confidence,
+            "answer": self._stringify_answer(result.answer),
+            "candidates": list(result.candidates),
+            "raw_response": result.raw_response,
+        }
+
+    def _stringify_answer(self, answer: Any) -> str:
+        if answer is None:
+            return ""
+        if isinstance(answer, list):
+            return "\n".join(str(item).strip() for item in answer if str(item).strip())
+        return str(answer).strip()
+
+    def check_llm_connection(self) -> bool:
+        for provider in self.providers:
+            if provider.has_llm_provider() and not provider.check_llm_connection():
+                return False
+        return True
+
+    def has_llm_provider(self) -> bool:
+        return any(provider.has_llm_provider() for provider in self.providers)
+
+    def provider_names(self) -> list[str]:
+        return list(self._provider_chain)
 
 
 # 按照以下模板实现更多题库
@@ -816,6 +1120,8 @@ class AI(Tiku):
             match = re.search(pattern, md_str, re.DOTALL)
             return match.group(1).strip() if match else md_str.strip()
 
+        reference_context = build_reference_context(q_info.get("reference_answers"))
+
         if self.http_proxy:
             proxy = self.http_proxy
             httpx_client = httpx.Client(proxy=proxy)
@@ -826,6 +1132,7 @@ class AI(Tiku):
         options_list = q_info['options'].split('\n')
         cleaned_options = [re.sub(r"^[A-Z]\s*", "", option) for option in options_list]
         options = "\n".join(cleaned_options)
+        reference_note = f"\n{reference_context}" if reference_context else ""
         # 判断题目类型
         if q_info['type'] == "single":
             completion = client.chat.completions.create(
@@ -833,11 +1140,11 @@ class AI(Tiku):
                 messages=[
                     {
                         "role": "system",
-                        "content": "本题为单选题，你只能选择一个选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+                        "content": "本题为单选题，你只能选择一个选项，请根据题目和选项回答问题。你可能会收到其他渠道候选答案作为参考，但必须独立判断，不要盲从。请以json格式输出正确的选项内容，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
                     },
                     {
                         "role": "user",
-                        "content": f"题目：{q_info['title']}\n选项：{options}"
+                        "content": f"题目：{q_info['title']}\n选项：{options}{reference_note}"
                     }
                 ]
             )
@@ -847,11 +1154,11 @@ class AI(Tiku):
                 messages=[
                     {
                         "role": "system",
-                        "content": "本题为多选题，你必须选择两个或以上选项，请根据题目和选项回答问题，以json格式输出正确的选项内容，示例回答：{\"Answer\": [\"答案1\",\n\"答案2\",\n\"答案3\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+                        "content": "本题为多选题，你必须选择两个或以上选项，请根据题目和选项回答问题。你可能会收到其他渠道候选答案作为参考，但必须独立判断，不要盲从。请以json格式输出正确的选项内容，示例回答：{\"Answer\": [\"答案1\",\n\"答案2\",\n\"答案3\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
                     },
                     {
                         "role": "user",
-                        "content": f"题目：{q_info['title']}\n选项：{options}"
+                        "content": f"题目：{q_info['title']}\n选项：{options}{reference_note}"
                     }
                 ]
             )
@@ -861,11 +1168,11 @@ class AI(Tiku):
                 messages=[
                     {
                         "role": "system",
-                        "content": "本题为填空题，你必须根据语境和相关知识填入合适的内容，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+                        "content": "本题为填空题，你必须根据语境和相关知识填入合适的内容，请根据题目回答问题。你可能会收到其他渠道候选答案作为参考，但必须独立判断，不要盲从。请以json格式输出正确的答案，示例回答：{\"Answer\": [\"答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
                     },
                     {
                         "role": "user",
-                        "content": f"题目：{q_info['title']}"
+                        "content": f"题目：{q_info['title']}{reference_note}"
                     }
                 ]
             )
@@ -875,11 +1182,11 @@ class AI(Tiku):
                 messages=[
                     {
                         "role": "system",
-                        "content": "本题为判断题，你只能回答正确或者错误，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"正确\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+                        "content": "本题为判断题，你只能回答正确或者错误，请根据题目回答问题。你可能会收到其他渠道候选答案作为参考，但必须独立判断，不要盲从。请以json格式输出正确的答案，示例回答：{\"Answer\": [\"正确\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
                     },
                     {
                         "role": "user",
-                        "content": f"题目：{q_info['title']}"
+                        "content": f"题目：{q_info['title']}{reference_note}"
                     }
                 ]
             )
@@ -889,11 +1196,11 @@ class AI(Tiku):
                 messages=[
                     {
                         "role": "system",
-                        "content": "本题为简答题，你必须根据语境和相关知识填入合适的内容，请根据题目回答问题，以json格式输出正确的答案，示例回答：{\"Answer\": [\"这是我的答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+                        "content": "本题为简答题，你必须根据语境和相关知识填入合适的内容，请根据题目回答问题。你可能会收到其他渠道候选答案作为参考，但必须独立判断，不要盲从。请以json格式输出正确的答案，示例回答：{\"Answer\": [\"这是我的答案\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
                     },
                     {
                         "role": "user",
-                        "content": f"题目：{q_info['title']}"
+                        "content": f"题目：{q_info['title']}{reference_note}"
                     }
                 ]
             )
@@ -971,6 +1278,9 @@ class SiliconFlow(Tiku):
             match = re.search(pattern, md_str, re.DOTALL)
             return match.group(1).strip() if match else md_str.strip()
 
+        reference_context = build_reference_context(q_info.get("reference_answers"))
+        reference_note = f"\n{reference_context}" if reference_context else ""
+
         # 构造请求头
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -980,13 +1290,13 @@ class SiliconFlow(Tiku):
         # 构造系统提示词
         system_prompt = ""
         if q_info['type'] == "single":
-            system_prompt = "本题为单选题，请根据题目和选项选择唯一正确答案，输出的是选项的具体内容，而不是内容前的ABCD，并以JSON格式输出：示例回答：{\"Answer\": [\"正确选项内容\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+            system_prompt = "本题为单选题，请根据题目和选项选择唯一正确答案，输出的是选项的具体内容，而不是内容前的ABCD。你可能会收到其他渠道候选答案作为参考，但必须独立判断，不要盲从。请以JSON格式输出：示例回答：{\"Answer\": [\"正确选项内容\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
         elif q_info['type'] == 'multiple':
-            system_prompt = "本题为多选题，请选择所有正确选项，输出的是选项的具体内容，而不是内容前的ABCD，以JSON格式输出：示例回答：{\"Answer\": [\"选项1\",\"选项2\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+            system_prompt = "本题为多选题，请选择所有正确选项，输出的是选项的具体内容，而不是内容前的ABCD。你可能会收到其他渠道候选答案作为参考，但必须独立判断，不要盲从。请以JSON格式输出：示例回答：{\"Answer\": [\"选项1\",\"选项2\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
         elif q_info['type'] == 'completion':
-            system_prompt = "本题为填空题，请直接给出填空内容，以JSON格式输出：示例回答：{\"Answer\": [\"答案文本\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+            system_prompt = "本题为填空题，请直接给出填空内容。你可能会收到其他渠道候选答案作为参考，但必须独立判断，不要盲从。请以JSON格式输出：示例回答：{\"Answer\": [\"答案文本\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
         elif q_info['type'] == 'judgement':
-            system_prompt = "本题为判断题，请回答'正确'或'错误'，以JSON格式输出：示例回答：{\"Answer\": [\"正确\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
+            system_prompt = "本题为判断题，请回答'正确'或'错误'。你可能会收到其他渠道候选答案作为参考，但必须独立判断，不要盲从。请以JSON格式输出：示例回答：{\"Answer\": [\"正确\"]}。除此之外不要输出任何多余的内容，也不要使用MD语法。如果你使用了互联网搜索，也请不要返回搜索的结果和参考资料"
 
         # 构造请求体
         payload = {
@@ -998,7 +1308,7 @@ class SiliconFlow(Tiku):
                 },
                 {
                     "role": "user",
-                    "content": f"题目：{q_info['title']}\n选项：{q_info['options']}"
+                    "content": f"题目：{q_info['title']}\n选项：{q_info['options']}{reference_note}"
                 }
             ],
             "stream": False,

@@ -88,11 +88,11 @@ def init_chaoxing(
     tiku = tiku.get_tiku_from_config()
     tiku.init_tiku()
 
-    provider = tiku_config.get("provider", "")
-    if provider in ["AI", "SiliconFlow"]:
-        check_connection = tiku_config.get("check_llm_connection", "true").lower() == "true"
+    if tiku.has_llm_provider():
+        check_connection = str(tiku_config.get("check_llm_connection", "true")).lower() == "true"
         if check_connection:
-            logger.info(f"正在验证大模型配置 (provider={provider})...")
+            providers = " -> ".join(tiku.provider_names())
+            logger.info(f"正在验证大模型配置 (provider={providers})...")
             if not tiku.check_llm_connection():
                 logger.error("大模型连接检查失败")
                 choice = prompt("大模型连接检查失败，无法准确答题，是否继续运行？(Y/n): ").strip().lower()

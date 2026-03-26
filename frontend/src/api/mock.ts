@@ -131,12 +131,27 @@ export async function getAccountDetail(accountId: number): Promise<{
       speed: 1.5,
       jobs: 4,
       notopenAction: 'retry',
-      answerProvider: 'AI',
+      answerProvider: 'TikuYanxi',
       submissionMode: 'intelligent',
       confidenceThreshold: 0.82,
       minCoverRate: 0.75,
       allowAiAutoSubmit: false,
       lowConfidenceAction: 'pause',
+      providerConfigJson: JSON.stringify({
+        mode: 'chain',
+        provider_chain: ['TikuYanxi', 'AI'],
+        provider_configs: {
+          TikuYanxi: {
+            tokens: 'yanxi-token-demo',
+          },
+          AI: {
+            endpoint: 'https://example.com/v1',
+            key: 'sk-demo',
+            model: 'gpt-5.4',
+            min_interval_seconds: 3,
+          },
+        },
+      }),
     },
     courses: [
       {
