@@ -62,9 +62,7 @@ chaoxing/
 
 ```bash
 # Install dependencies
-pip install -r requirements.txt
-# or
-pip install .
+uv sync
 ```
 
 ### Run CLI Mode

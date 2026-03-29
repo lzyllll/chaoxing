@@ -35,9 +35,9 @@ cd chaoxing
 2. 安装依赖
 
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
-或使用 `pip install .`（通过 pyproject.toml 安装依赖）
+使用 `uv run` 运行命令即可自动使用项目环境。
 
 3. (可选直接运行)
 
@@ -132,7 +132,7 @@ copy frontend\.env.example frontend\.env
 2. 安装后端依赖
 
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
 3. 启动后端 API

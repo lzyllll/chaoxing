@@ -24,13 +24,13 @@ jobs:
           python-version: '3.13'
           architecture: ${{matrix.architecture}}
 
-      - name: Install requirements
+      - name: Install dependencies
         run: |
-          pip install -r requirements.txt
-          pip install pyinstaller
+          pip install uv
+          uv sync
 
       - name: Build win bin
-        run: pyinstaller -F main.py -n 'chaoxing' --add-data "resource;resource" --hidden-import=chardet
+        run: uv run --with pyinstaller pyinstaller -F main.py -n 'chaoxing' --add-data "resource;resource" --hidden-import=chardet
 
       - name: Create release package
         run: |
