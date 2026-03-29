@@ -20,8 +20,8 @@ services:
       - ./.docker-data/runtime:/data
     expose:
       - "8000"
-    ports:
-      - "${BACKEND_PORT_BIND:-127.0.0.1:8000:8000}"
+    # ports:
+    #   - "${BACKEND_PORT_BIND:-127.0.0.1:8000:8000}"
 
   frontend:
     build:
@@ -39,4 +39,4 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "${FRONTEND_PORT_BIND:-127.0.0.1:5173:80}"
+      - "${FRONTEND_PORT_BIND:-0.0.0.0:5173:80}"
