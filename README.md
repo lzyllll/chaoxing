@@ -79,11 +79,10 @@ uv run --python 3.13 main.py -c config.ini
 
 ### Docker运行（Web 控制台）
 当前 Docker 部署已调整为 `frontend` 和 `backend` 两个服务：
+1. 修改docker-compose.yml
+```
+设置 百度地图的key
 
-1. 准备 Compose 环境变量（端口和百度地图 AK）
-
-```bash
-copy docker-compose.env.example .env
 ```
 
 2. 准备后端配置（管理员登录账号密码）
