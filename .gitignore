@@ -157,5 +157,6 @@ config*.ini
 cache.json
 .ace-tool/
 .runtime/
+.docker-data/
 frontend/dist/
 .claude/

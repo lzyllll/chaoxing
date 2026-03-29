@@ -14,6 +14,7 @@ from requests.adapters import HTTPAdapter
 from tqdm import tqdm
 
 from chaoxing.services.answer import *
+from chaoxing.services.answer_records import AnswerRecordService, NullAnswerRecordService
 from chaoxing.services.work_answer import (
     WorkAnswerPolicy,
     WorkQuestionOutcome,
@@ -32,7 +33,7 @@ from chaoxing.utils.decode import (
     decode_questions_info,
 )
 from chaoxing.core.exceptions import MaxRetryExceeded
-from chaoxing.web.services.answer_records import AnswerRecordService
+from chaoxing.mixins import SignMixin
 
 
 def get_timestamp():
@@ -93,14 +94,14 @@ class StudyResult(Enum):
     def is_failure(self):
         return self != StudyResult.SUCCESS
 
-class Chaoxing:
+class Chaoxing(SignMixin):
     def __init__(self, account: Account = None, tiku: Tiku = None, **kwargs):
         self.cookies_path = kwargs.pop("cookies_path", None)
         self.account = account
         self.cipher = AESCipher()
         self.tiku = tiku
         self.kwargs = kwargs
-        self.answer_record_service = kwargs.get("answer_record_service") or AnswerRecordService()
+        self.answer_record_service: AnswerRecordService = kwargs.get("answer_record_service") or NullAnswerRecordService()
         self.session = build_session(use_cookies(self.cookies_path))
         self.rollback_times = 0
         self.rate_limiter = RateLimiter(0.5) # 其他接口速率限制比较松

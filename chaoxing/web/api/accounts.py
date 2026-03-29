@@ -7,7 +7,8 @@ from sqlmodel import SQLModel, Session, select
 from chaoxing.web.db import get_session
 from chaoxing.web.models import Account, AccountStatus
 from chaoxing.web.settings import default_account_cookies_path
-from chaoxing.web.services import WebQueryService, task_runtime_service
+from chaoxing.web.services.queries import WebQueryService
+from chaoxing.web.services.runtime import task_runtime_service
 
 router = APIRouter(tags=["dashboard"])
 query_service = WebQueryService()

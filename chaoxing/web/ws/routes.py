@@ -6,7 +6,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from chaoxing.web.auth import ensure_admin_websocket_session
 from chaoxing.web.db import session_context
-from chaoxing.web.services import WebQueryService
+from chaoxing.web.services.queries import WebQueryService
 
 router = APIRouter()
 query_service = WebQueryService()

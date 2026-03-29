@@ -11,7 +11,9 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AccountSignDrawer: typeof import('./components/account/AccountSignDrawer.vue')['default']
     HelloWorld: typeof import('./components/HelloWorld.vue')['default']
+    LocationPickerMap: typeof import('./components/account/LocationPickerMap.vue')['default']
     NAlert: typeof import('naive-ui')['NAlert']
     NButton: typeof import('naive-ui')['NButton']
     NCard: typeof import('naive-ui')['NCard']

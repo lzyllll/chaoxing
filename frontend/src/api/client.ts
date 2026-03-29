@@ -6,11 +6,19 @@ import type {
   AdminLoginPayload,
   AdminSession,
   AnswerRecordItem,
+  CourseSignsResponse,
   CourseItem,
   CreateAccountPayload,
   CreateTaskPayload,
   HealthResponse,
   PendingDecisionItem,
+  SignCaptchaResponse,
+  SignCaptchaVerifyPayload,
+  SignInspectResponse,
+  SignPhotoUploadItem,
+  SignSubmitPayload,
+  SignSubmitResponse,
+  SignContextPayload,
   TaskEventItem,
   TaskLogItem,
   TaskSummary,
@@ -96,6 +104,46 @@ export async function syncAccountCourses(accountId: number): Promise<{
 
 export async function deleteAccount(accountId: number): Promise<void> {
   await http.delete(`/accounts/${accountId}`)
+}
+
+export async function getCourseSigns(accountId: number, courseSnapshotId: number): Promise<CourseSignsResponse> {
+  const { data } = await http.get<CourseSignsResponse>(`/accounts/${accountId}/courses/${courseSnapshotId}/signs`)
+  return data
+}
+
+export async function inspectSign(accountId: number, payload: SignContextPayload): Promise<SignInspectResponse> {
+  const { data } = await http.post<SignInspectResponse>(`/accounts/${accountId}/signs/inspect`, payload)
+  return data
+}
+
+export async function getSignCaptcha(accountId: number, payload: SignContextPayload): Promise<SignCaptchaResponse> {
+  const { data } = await http.post<SignCaptchaResponse>(`/accounts/${accountId}/signs/captcha`, payload)
+  return data
+}
+
+export async function submitSign(accountId: number, payload: SignSubmitPayload): Promise<SignSubmitResponse> {
+  const { data } = await http.post<SignSubmitResponse>(`/accounts/${accountId}/signs/submit`, payload)
+  return data
+}
+
+export async function submitSignWithCaptcha(
+  accountId: number,
+  payload: SignCaptchaVerifyPayload,
+): Promise<SignSubmitResponse> {
+  const { data } = await http.post<SignSubmitResponse>(`/accounts/${accountId}/signs/submit-with-captcha`, payload)
+  return data
+}
+
+export async function uploadSignPhoto(accountId: number, file: File): Promise<SignPhotoUploadItem> {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('content_type', file.type || 'image/jpeg')
+  const { data } = await http.post<SignPhotoUploadItem>(`/accounts/${accountId}/signs/photo/upload`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  })
+  return data
 }
 
 export async function getTasks(): Promise<TaskSummary[]> {

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, h, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { useMessage } from 'naive-ui'
+import { NButton, NSpace, useMessage } from 'naive-ui'
 
 import { getAccountDetail, syncAccountCourses, updateAccount } from '@/api/client'
+import AccountSignDrawer from '@/components/account/AccountSignDrawer.vue'
 import type { AccountItem, AccountStudyConfig, CourseItem, UpdateAccountPayload } from '@/types'
 import { formatDateTime } from '@/utils/format'
 
@@ -172,12 +173,47 @@ const syncingCourses = ref(false)
 const account = ref<AccountItem | null>(null)
 const config = ref<AccountStudyConfig | null>(null)
 const courses = ref<CourseItem[]>([])
+const selectedCourse = ref<CourseItem | null>(null)
+const signDrawerVisible = ref(false)
 const providerMode = ref<ProviderMode>('single')
 const providerNodes = ref<ProviderNode[]>([createProviderNode()])
 const providerExtraJson = ref('{}')
 
 const accountId = computed(() => Number(route.params.id))
 const singleProviderNode = computed(() => providerNodes.value[0] ?? createProviderNode())
+const courseColumns = computed(() => [
+  { title: '课程名', key: 'title' },
+  { title: '教师', key: 'teacher' },
+  { title: '课程 ID', key: 'courseId' },
+  { title: '班级 ID', key: 'clazzId' },
+  {
+    title: '同步时间',
+    key: 'fetchedAt',
+    render: (row: CourseItem) => formatDateTime(row.fetchedAt),
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    render: (row: CourseItem) =>
+      h(
+        NSpace,
+        { size: 'small' },
+        {
+          default: () => [
+            h(
+              NButton,
+              {
+                size: 'small',
+                secondary: true,
+                onClick: () => openSignDrawer(row),
+              },
+              { default: () => '查看签到' },
+            ),
+          ],
+        },
+      ),
+  },
+])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -632,6 +668,11 @@ async function refreshCourses(): Promise<void> {
   }
 }
 
+function openSignDrawer(course: CourseItem): void {
+  selectedCourse.value = course
+  signDrawerVisible.value = true
+}
+
 onMounted(async () => {
   await loadDetail()
 })
@@ -757,7 +798,7 @@ onMounted(async () => {
 
             <n-alert type="info" :show-icon="false" style="margin-bottom: 16px">
               <template v-if="providerMode === 'single'">
-                选择一个 provider 后，直接填写对应字段。留空时继续沿用 `backend.ini` 里的 `[tiku]` 默认配置。
+                选择一个 provider 后，直接填写对应字段。留空时继续沿用 `config.yaml` 里的 `tiku` 默认配置。
               </template>
               <template v-else>
                 链式模式会按顺序查询多个 provider。后面的 AI / SiliconFlow 会把前面渠道的答案作为参考，再自行判断最终答案。
@@ -769,7 +810,7 @@ onMounted(async () => {
                 <n-select
                   :value="singleProviderNode.provider"
                   clearable
-                  placeholder="留空则沿用 backend.ini 的 [tiku]"
+                  placeholder="留空则沿用 config.yaml 的 tiku"
                   :options="providerOptionsFor(singleProviderNode.id)"
                   @update:value="handleSingleProviderChange"
                 />
@@ -937,13 +978,7 @@ onMounted(async () => {
       </template>
 
       <n-data-table
-        :columns="[
-          { title: '课程名', key: 'title' },
-          { title: '教师', key: 'teacher' },
-          { title: '课程 ID', key: 'courseId' },
-          { title: '班级 ID', key: 'clazzId' },
-          { title: '同步时间', key: 'fetchedAt', render: (row: CourseItem) => formatDateTime(row.fetchedAt) },
-        ]"
+        :columns="courseColumns"
         :data="courses"
         :pagination="false"
       >
@@ -952,5 +987,11 @@ onMounted(async () => {
         </template>
       </n-data-table>
     </n-card>
+
+    <AccountSignDrawer
+      v-model:show="signDrawerVisible"
+      :account-id="accountId"
+      :course="selectedCourse"
+    />
   </n-space>
 </template>

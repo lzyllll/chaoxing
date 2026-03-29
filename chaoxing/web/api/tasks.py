@@ -6,7 +6,8 @@ from sqlmodel import SQLModel, Session, select
 
 from chaoxing.web.db import get_session
 from chaoxing.web.models import Account, CourseSnapshot, TaskRun, TaskStatus
-from chaoxing.web.services import WebQueryService, task_runtime_service
+from chaoxing.web.services.queries import WebQueryService
+from chaoxing.web.services.runtime import task_runtime_service
 
 router = APIRouter(tags=["tasks"])
 query_service = WebQueryService()

@@ -3,6 +3,7 @@
 
 from chaoxing.web.api.accounts import router as accounts_router
 from chaoxing.web.api.decisions import router as decisions_router
+from chaoxing.web.api.signs import router as signs_router
 from chaoxing.web.api.tasks import router as tasks_router
 
-__all__ = ["accounts_router", "decisions_router", "tasks_router"]
+__all__ = ["accounts_router", "decisions_router", "signs_router", "tasks_router"]

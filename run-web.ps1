@@ -2,8 +2,8 @@ $ErrorActionPreference = "Stop"
 
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $frontendDir = Join-Path $projectRoot "frontend"
-$backendConfig = Join-Path $projectRoot "backend.ini"
-$backendExample = Join-Path $projectRoot "backend.example.ini"
+$backendConfig = Join-Path $projectRoot "config.yaml"
+$backendExample = Join-Path $projectRoot "config.example.yaml"
 $frontendEnv = Join-Path $frontendDir ".env"
 $frontendEnvExample = Join-Path $frontendDir ".env.example"
 

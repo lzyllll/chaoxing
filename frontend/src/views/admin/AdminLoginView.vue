@@ -64,7 +64,7 @@ async function submitLogin(): Promise<void> {
       <n-card class="admin-login__card" :bordered="false">
         <n-form @submit.prevent="submitLogin">
           <n-form-item label="管理员账号">
-            <n-input v-model:value="form.username" placeholder="在 backend.ini 的 [admin] 中配置" clearable>
+            <n-input v-model:value="form.username" placeholder="在 config.yaml 的 admin.username 中配置" clearable>
               <template #prefix>
                 <n-icon>
                   <PersonOutline />
@@ -95,7 +95,7 @@ async function submitLogin(): Promise<void> {
         </n-form>
 
         <n-text depth="3" class="admin-login__hint">
-          未配置 `[admin].username` 和 `[admin].password` 时，将保持当前免登录模式。
+          未配置 `admin.username` 和 `admin.password` 时，将保持当前免登录模式。
         </n-text>
       </n-card>
     </div>

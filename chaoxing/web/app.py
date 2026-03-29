@@ -6,11 +6,12 @@ from chaoxing import __version__
 from chaoxing.web.api.admin import router as admin_router
 from chaoxing.web.api.accounts import router as accounts_router
 from chaoxing.web.api.decisions import router as decisions_router
+from chaoxing.web.api.signs import router as signs_router
 from chaoxing.web.api.tasks import router as tasks_router
 from chaoxing.web.auth import require_admin_session
 from chaoxing.web.db import create_db_and_tables
 from chaoxing.web.settings import get_backend_settings
-from chaoxing.web.services import task_runtime_service
+from chaoxing.web.services.runtime import task_runtime_service
 from chaoxing.web.ws.routes import router as ws_router
 
 api_router = APIRouter(prefix="/api")
@@ -18,6 +19,7 @@ api_router.include_router(admin_router)
 api_router.include_router(accounts_router, dependencies=[Depends(require_admin_session)])
 api_router.include_router(tasks_router, dependencies=[Depends(require_admin_session)])
 api_router.include_router(decisions_router, dependencies=[Depends(require_admin_session)])
+api_router.include_router(signs_router, dependencies=[Depends(require_admin_session)])
 
 
 @api_router.get("/health")

@@ -15,5 +15,8 @@ tqdm>=4.67.1
 httpx>=0.28.1
 urllib3>=2.5.0
 chardet>=3.0.2,<6.0.0
+ddddocr==1.5.6
 httpx[socks]
 uvicorn[standard]
+python-multipart
+PyYAML>=6.0.2

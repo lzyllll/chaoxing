@@ -40,7 +40,7 @@ chaoxing/
     ├── ws/        # WebSocket for real-time updates
     ├── models/    # SQLModel entities
     ├── services/  # Business logic
-    └── settings.py # Backend config from backend.ini
+    └── settings.py # Backend config from config.yaml
 ```
 
 ### Key Design Patterns
@@ -53,7 +53,7 @@ chaoxing/
 ### Configuration System
 
 - **CLI Mode**: `config.ini` (from `config_template.ini`)
-- **Web Mode**: `backend.ini` (from `backend.example.ini`) + `frontend/.env`
+- **Web Mode**: `config.yaml` (from `config.example.yaml`) + `frontend/.env`
 - Web accounts can override default question bank settings per-account
 
 ## Development Commands
@@ -115,7 +115,7 @@ pyinstaller -F main.py -n 'chaoxing' --add-data "resource;resource" --hidden-imp
   - `/api/tasks` - Task management and execution
   - `/api/decisions` - User decision handling
   - `/ws` - WebSocket for real-time task updates
-- **Settings**: `chaoxing.web.settings.get_backend_settings()` reads `backend.ini`
+- **Settings**: `chaoxing.web.settings.get_backend_settings()` reads `config.yaml`
 - **Task Execution**: Async via `chaoxing.services.runner` with WebSocket progress updates
 
 ### Frontend (Vue3 + Vite)
@@ -139,7 +139,7 @@ User → Vue3 UI → REST API → FastAPI → runner.run_study() → Chaoxing AP
 
 1. Create class in `chaoxing/services/answer.py` inheriting from `Tiku`
 2. Implement `init_tiku()` and `query()` methods
-3. Add config section to `config_template.ini` and `backend.example.ini`
+3. Add config section to `config_template.ini` and `config.example.yaml`
 
 ### Add New Task Type
 
@@ -161,7 +161,7 @@ User → Vue3 UI → REST API → FastAPI → runner.run_study() → Chaoxing AP
 python main.py -v
 
 # Web backend debug
-# Set server_reload=true in backend.ini
+# Set server.reload=true in config.yaml
 
 # Check logs
 # CLI: stdout or chaoxing.log (if configured)

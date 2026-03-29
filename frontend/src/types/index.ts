@@ -10,6 +10,16 @@ export type SubmissionMode = 'manual' | 'auto' | 'intelligent'
 
 export type LowConfidenceAction = 'pause' | 'skip' | 'save_only'
 
+export type SignType = 'normal' | 'photo' | 'qrcode' | 'location' | 'gesture' | 'signcode' | 'unknown'
+
+export type SignResultStatus =
+  | 'success'
+  | 'captcha_required'
+  | 'already_signed'
+  | 'ended'
+  | 'wrong_location'
+  | 'error'
+
 export interface HealthResponse {
   status: string
   version: string
@@ -60,6 +70,145 @@ export interface CourseItem {
   title: string
   teacher: string
   fetchedAt: string
+}
+
+export interface SignLocationPayload {
+  latitude: number
+  longitude: number
+  address: string
+}
+
+export interface SignContextPayload {
+  activeId: number
+  courseId: number
+  classId: number
+  ext?: string
+  signType?: SignType | null
+}
+
+export interface SignSubmitPayload extends SignContextPayload {
+  signCode?: string | null
+  enc?: string | null
+  location?: SignLocationPayload | null
+  objectId?: string | null
+  preSign?: boolean
+}
+
+export interface SignCaptchaVerifyPayload extends SignSubmitPayload {
+  xPosition: number
+  captchaData: SignCaptchaDataItem
+}
+
+export interface SignActivityItem {
+  activeId: number
+  courseId: number
+  classId: number
+  ext: string
+  name: string
+  endName: string
+  activeType?: number | null
+  type?: number | null
+  status?: number | null
+  userStatus?: number | null
+  otherId: string
+  signType: SignType
+  isLook: boolean
+  startTime?: number | null
+  endTime?: number | null
+}
+
+export interface SignContextItem {
+  activeId: number
+  courseId: number
+  classId: number
+  ext: string
+  signType: SignType
+  name: string
+}
+
+export interface SignDetailItem {
+  activeId: number
+  signType: SignType
+  name: string
+  title?: string | null
+  otherId: string
+  status?: number | null
+  userStatus?: number | null
+  activeType?: number | null
+  startTime?: number | null
+  endTime?: number | null
+  lateEndTime?: number | null
+  signInId?: number | null
+  signOutId?: number | null
+  signOutPublishTime?: number | null
+  numberCount?: number | null
+  ifOpenAddress?: boolean | null
+  ifRefreshQrcode?: boolean | null
+  ifNeedVcode?: boolean | null
+  locationLatitude?: number | null
+  locationLongitude?: number | null
+  locationRange?: number | null
+  locationText?: string | null
+  raw: Record<string, unknown>
+}
+
+export interface SignPreflightItem {
+  activeId: number
+  signType: SignType
+  alreadySigned: boolean
+  analysisCode?: string | null
+  rawHtml: string
+  detail?: SignDetailItem | null
+}
+
+export interface SignCaptchaDataItem {
+  captchaId: string
+  type: string
+  version: string
+  token: string
+  captchaKey: string
+  iv: string
+  shadeImage: string
+  cutoutImage: string
+}
+
+export interface SignSubmitResultItem {
+  activeId: number
+  signType: SignType
+  status: SignResultStatus
+  message: string
+  rawResponse: string
+  captchaRequired: boolean
+  alreadySigned: boolean
+  ended: boolean
+  wrongLocation: boolean
+}
+
+export interface SignPhotoUploadItem {
+  token: string
+  objectId: string
+  filePath: string
+}
+
+export interface CourseSignsResponse {
+  course: CourseItem
+  activities: SignActivityItem[]
+  ext: string
+}
+
+export interface SignInspectResponse {
+  context: SignContextItem
+  detail: SignDetailItem
+  preflight: SignPreflightItem
+}
+
+export interface SignCaptchaResponse {
+  captchaData: SignCaptchaDataItem
+}
+
+export interface SignSubmitResponse {
+  result: SignSubmitResultItem
+  captchaData?: SignCaptchaDataItem
 }
 
 export interface TaskSummary {

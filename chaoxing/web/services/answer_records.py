@@ -2,12 +2,13 @@
 import json
 from typing import Any
 
+from chaoxing.services.answer_records import AnswerRecordService
 from chaoxing.services.work_answer import WorkQuestionOutcome, WorkSubmissionDecision
 from chaoxing.web.db import session_context
 from chaoxing.web.models import AnswerRecord, PendingDecision
 
 
-class AnswerRecordService:
+class SqlModelAnswerRecordService:
     def save_work_outcomes(
         self,
         *,
@@ -62,3 +63,6 @@ class AnswerRecordService:
     def _to_json(value: Any, *, default: Any) -> str:
         payload = default if value is None else value
         return json.dumps(payload, ensure_ascii=False)
+
+
+__all__ = ["AnswerRecordService", "SqlModelAnswerRecordService"]

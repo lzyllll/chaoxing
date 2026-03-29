@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends
 from sqlmodel import Session
 
 from chaoxing.web.db import get_session
-from chaoxing.web.services import WebQueryService
+from chaoxing.web.services.queries import WebQueryService
 
 router = APIRouter(tags=["decisions"])
 query_service = WebQueryService()

@@ -24,6 +24,7 @@ export const frontendRuntime = {
   apiBaseUrl: trimTrailingSlash(import.meta.env.VITE_API_BASE_URL?.trim() || DEFAULT_API_BASE_URL),
   wsBaseUrl: trimTrailingSlash(import.meta.env.VITE_WS_BASE_URL?.trim() || DEFAULT_WS_BASE_URL),
   apiTimeoutMs: parsePositiveInteger(import.meta.env.VITE_API_TIMEOUT_MS, DEFAULT_API_TIMEOUT_MS),
+  baiduMapAk: import.meta.env.VITE_BAIDU_MAP_AK?.trim() || '',
 }
 
 export function resolveTaskWebSocketUrl(taskId: number): string {

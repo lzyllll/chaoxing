@@ -80,10 +80,10 @@ uv run --python 3.13 main.py -c config.ini
 ### Docker运行（Web 控制台）
 当前 Docker 部署已调整为 `frontend` 和 `backend` 两个服务：
 
-1. （可选）准备自定义后端配置
+1. 准备 Compose 环境变量（端口和百度地图 AK）
 
 ```bash
-copy backend.example.ini backend.ini
+copy docker-compose.env.example .env
 ```
 
 2. 构建并启动服务
@@ -99,11 +99,12 @@ http://127.0.0.1:5173
 ```
 
 4. 说明
-   - `backend` 使用根目录 `Dockerfile` 构建，镜像内通过 `uv sync` 安装依赖，并用 `uvicorn chaoxing.web.app:app` 启动
+   - `backend` 使用根目录 `Dockerfile` 构建，启动时如果 `/config/config.yaml` 不存在，会自动从镜像内的 `config.example.yaml` 生成默认配置
    - `frontend` 使用 `frontend/Dockerfile` 构建，负责静态页面和 `/api`、`/ws` 反向代理
-   - 运行数据默认持久化到根目录 `./.runtime`
-   - `docker-compose.yml` 会将根目录 `backend.ini` 挂载到容器内 `/config/backend.ini`
-   - 容器内通过环境变量强制使用 `0.0.0.0:8000`、关闭 reload，并将运行数据写入 `/data`
+   - Docker 运行数据默认持久化到根目录 `./.docker-data`
+   - `./.docker-data/config/config.yaml` 可直接在宿主机编辑，修改后重启 `backend` 服务生效
+   - 百度地图 AK 通过根目录 `.env` 中的 `VITE_BAIDU_MAP_AK` 注入到前端镜像构建阶段
+   - 如果需要改端口，可在根目录 `.env` 里修改 `BACKEND_PORT_BIND` 和 `FRONTEND_PORT_BIND`
 
 ### Web 控制台（FastAPI + Vue3 + SQLModel）
 
@@ -112,9 +113,11 @@ http://127.0.0.1:5173
 1. 准备各自配置文件
 
 ```bash
-copy backend.example.ini backend.ini
+copy config.example.yaml config.yaml
 copy frontend\.env.example frontend\.env
 ```
+
+如需在签到页使用地图选点，请在 `frontend\.env` 中配置百度地图浏览器端 AK：`VITE_BAIDU_MAP_AK`。
 
 2. 安装后端依赖
 
@@ -149,10 +152,10 @@ http://127.0.0.1:5173
 ```
 
 说明：
-- 后端配置文件为 `backend.ini`，默认模板为 `backend.example.ini`
+- 后端配置文件为 `config.yaml`，默认模板为 `config.example.yaml`
 - 前端配置文件为 `frontend/.env`，默认模板为 `frontend/.env.example`
-- 后端监听地址、CORS、SQLite 路径、cookies 存储目录都由 `backend.ini` 控制
-- 如果希望启用 Web 管理员登录，请在 `backend.ini` 的 `[admin]` 节填写 `username` 和 `password`
+- 后端监听地址、CORS、SQLite 路径、cookies 存储目录都由 `config.yaml` 控制
+- 如果希望启用 Web 管理员登录，请在 `config.yaml` 的 `admin` 段填写 `username` 和 `password`
 - 前端 dev host、dev port、API 基地址、WS 基地址和代理目标都由 `frontend/.env` 控制
 - 也可以直接运行 `.\run-web.ps1`，脚本会分别启动前后端并提示配置文件位置
 
@@ -161,16 +164,16 @@ http://127.0.0.1:5173
 命令行版与 Web 版现在各自使用独立配置：
 
 - 命令行版 `main.py` 继续使用根目录 `config.ini`
-- Web 后端默认从 `backend.ini` 的 `[tiku]` 节读取默认题库配置
+- Web 后端默认从 `config.yaml` 的 `tiku` 段读取默认题库配置
 
-在对应配置文件中找到 `[tiku]`，按照注释填写想要使用的题库名（即 `provider`，大小写要一致），并填写必要信息，如 token。
+在对应配置文件中找到 `tiku` 段，按照注释填写想要使用的题库名（即 `provider`，大小写要一致），并填写必要信息，如 token。
 
-对于 Web 控制台，账号页面中的 `Answer Provider` 和 `Provider 附加配置(JSON)` 会覆盖 `backend.ini` 里的默认 `[tiku]` 配置；如果留空，则沿用 `backend.ini` 中的默认值。
+对于 Web 控制台，账号页面中的 `Answer Provider` 和 `Provider 附加配置(JSON)` 会覆盖 `config.yaml` 里的默认 `tiku` 配置；如果留空，则沿用 `config.yaml` 中的默认值。
 
 对于那些有章节检测且任务点需要解锁的课程，必须配置题库。
 
 **提交模式与答题**
-不配置题库（命令行版没有 `config.ini`，或 Web 版没有在 `backend.ini` / 账号配置中填写题库）视为不使用题库，对于章节检测等需要答题的任务会自动跳过。
+不配置题库（命令行版没有 `config.ini`，或 Web 版没有在 `config.yaml` / 账号配置中填写题库）视为不使用题库，对于章节检测等需要答题的任务会自动跳过。
 题库覆盖率：搜到的题目占总题目的比例
 提交模式`submit`值为
 

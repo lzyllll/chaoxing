@@ -11,6 +11,17 @@ from typing import Any
 from sqlmodel import delete, func, select
 
 from chaoxing.core.exceptions import LoginError
+from chaoxing.models import (
+    SignCaptchaData,
+    SignContext,
+    SignDetail,
+    SignLocation,
+    SignPhotoUpload,
+    SignPreflight,
+    SignSubmitResult,
+    SignType,
+)
+from chaoxing.services.answer_records import AnswerRecordService
 from chaoxing.services.runner import init_chaoxing, process_course, sanitize_common_config
 from chaoxing.web.db import session_context
 from chaoxing.web.models import (
@@ -24,7 +35,8 @@ from chaoxing.web.models import (
     TaskRun,
     TaskStatus,
 )
-from chaoxing.web.settings import load_backend_config
+from chaoxing.web.services.answer_records import SqlModelAnswerRecordService
+from chaoxing.web.settings import load_backend_tiku_config, normalize_backend_tiku_config
 
 
 @dataclass
@@ -91,6 +103,142 @@ class TaskRuntimeService:
                 "courseCount": len(courses),
                 "fetchedAt": account.updated_at.isoformat() if account.updated_at else None,
             }
+
+    def list_course_signs(self, account_id: int, course_snapshot_id: int) -> dict[str, Any]:
+        snapshot = self._get_course_snapshot(account_id, course_snapshot_id)
+        chaoxing = self._build_account_chaoxing(account_id)
+        page = chaoxing.list_sign_activities(course_id=int(snapshot.course_id), class_id=int(snapshot.clazz_id))
+        return {
+            "course": self._serialize_course_snapshot(snapshot),
+            "activities": [self._serialize_sign_activity(activity) for activity in page.activities],
+            "ext": page.ext,
+        }
+
+    def inspect_sign(
+        self,
+        account_id: int,
+        *,
+        active_id: int,
+        course_id: int,
+        class_id: int,
+        ext: str = "",
+        sign_type: str | None = None,
+    ) -> dict[str, Any]:
+        chaoxing = self._build_account_chaoxing(account_id)
+        signer = chaoxing.create_signer(
+            active_id,
+            course_id=course_id,
+            class_id=class_id,
+            ext=ext,
+            sign_type=self._normalize_sign_type(sign_type),
+        )
+        detail = signer.get_detail()
+        preflight = signer.pre_sign()
+        return {
+            "context": self._serialize_sign_context(signer.context),
+            "detail": self._serialize_sign_detail(detail),
+            "preflight": self._serialize_sign_preflight(preflight),
+        }
+
+    def get_sign_captcha(
+        self,
+        account_id: int,
+        *,
+        active_id: int,
+        course_id: int,
+        class_id: int,
+        ext: str = "",
+        sign_type: str | None = None,
+    ) -> dict[str, Any]:
+        chaoxing = self._build_account_chaoxing(account_id)
+        signer = chaoxing.create_signer(
+            active_id,
+            course_id=course_id,
+            class_id=class_id,
+            ext=ext,
+            sign_type=self._normalize_sign_type(sign_type),
+        )
+        captcha = signer.get_captcha()
+        return {"captchaData": self._serialize_sign_captcha(captcha)}
+
+    def submit_sign(
+        self,
+        account_id: int,
+        *,
+        active_id: int,
+        course_id: int,
+        class_id: int,
+        ext: str = "",
+        sign_type: str | None = None,
+        sign_code: str | None = None,
+        enc: str | None = None,
+        location: SignLocation | None = None,
+        object_id: str | None = None,
+        pre_sign: bool = True,
+    ) -> dict[str, Any]:
+        chaoxing = self._build_account_chaoxing(account_id)
+        signer = chaoxing.create_signer(
+            active_id,
+            course_id=course_id,
+            class_id=class_id,
+            ext=ext,
+            sign_type=self._normalize_sign_type(sign_type),
+        )
+        result = signer.submit_auto(
+            sign_code=sign_code,
+            enc=enc,
+            location=location,
+            object_id=object_id,
+            pre_sign=pre_sign,
+        )
+        payload: dict[str, Any] = {"result": self._serialize_sign_result(result)}
+        if result.captcha_required:
+            payload["captchaData"] = self._serialize_sign_captcha(signer.get_captcha())
+        return payload
+
+    def submit_sign_with_captcha(
+        self,
+        account_id: int,
+        *,
+        active_id: int,
+        course_id: int,
+        class_id: int,
+        ext: str = "",
+        sign_type: str | None = None,
+        x_position: float,
+        captcha_data: dict[str, Any],
+        sign_code: str | None = None,
+        enc: str | None = None,
+        location: SignLocation | None = None,
+        object_id: str | None = None,
+        pre_sign: bool = True,
+    ) -> dict[str, Any]:
+        chaoxing = self._build_account_chaoxing(account_id)
+        signer = chaoxing.create_signer(
+            active_id,
+            course_id=course_id,
+            class_id=class_id,
+            ext=ext,
+            sign_type=self._normalize_sign_type(sign_type),
+        )
+        result = signer.submit_with_captcha_auto(
+            x_position=x_position,
+            captcha_data=self._normalize_captcha_data(captcha_data),
+            sign_code=sign_code,
+            enc=enc,
+            location=location,
+            object_id=object_id,
+            pre_sign=pre_sign,
+        )
+        payload: dict[str, Any] = {"result": self._serialize_sign_result(result)}
+        if result.captcha_required:
+            payload["captchaData"] = self._serialize_sign_captcha(signer.get_captcha())
+        return payload
+
+    def upload_sign_photo(self, account_id: int, filename: str, content: bytes, content_type: str | None = None) -> dict[str, Any]:
+        chaoxing = self._build_account_chaoxing(account_id)
+        upload = chaoxing.upload_sign_photo_bytes(filename, content, content_type=content_type)
+        return self._serialize_sign_photo_upload(upload)
 
     def start_task(self, task_id: int) -> None:
         with self._lock:
@@ -453,6 +601,7 @@ class TaskRuntimeService:
         runtime_kwargs: dict[str, Any] = {
             "cookies_path": account["cookies_path"],
             "task_id": task_id,
+            "answer_record_service": self._build_answer_record_service(),
         }
         if task_id is not None:
             runtime_kwargs["event_callback"] = lambda event_type, payload: self.handle_runtime_event(task_id, event_type, payload)
@@ -464,6 +613,31 @@ class TaskRuntimeService:
             prompt=lambda _: "",
             **runtime_kwargs,
         )
+
+    def _build_account_chaoxing(self, account_id: int):
+        with session_context() as session:
+            account = session.get(Account, account_id)
+            if account is None:
+                raise LookupError("Account not found")
+            config = self.ensure_account_config(session, account_id)
+            session.commit()
+            account_data = self._account_payload(account)
+            config_data = self._config_payload(config)
+
+        chaoxing = self._build_chaoxing(
+            account=account_data,
+            config=config_data,
+            selected_courses=None,
+            tiku_config=self._load_tiku_config(config_data),
+        )
+        login_state = chaoxing.login(login_with_cookies=True)
+        if not login_state["status"]:
+            raise LoginError(login_state["msg"])
+        return chaoxing
+
+    @staticmethod
+    def _build_answer_record_service() -> AnswerRecordService:
+        return SqlModelAnswerRecordService()
 
     def _build_common_config(
         self,
@@ -484,10 +658,7 @@ class TaskRuntimeService:
         )
 
     def _load_tiku_config(self, config: dict[str, Any]) -> dict[str, Any]:
-        parser = load_backend_config()
-        payload: dict[str, Any] = {}
-        if parser.has_section("tiku"):
-            payload = dict(parser.items("tiku"))
+        payload = load_backend_tiku_config()
 
         if config["answer_provider"]:
             payload["provider"] = config["answer_provider"]
@@ -507,7 +678,7 @@ class TaskRuntimeService:
             payload["true_list"] = "正确,对,true,是"
         if "false_list" not in payload:
             payload["false_list"] = "错误,错,false,否"
-        return payload
+        return normalize_backend_tiku_config(payload)
 
     @staticmethod
     def _account_payload(account: Account) -> dict[str, Any]:
@@ -528,6 +699,158 @@ class TaskRuntimeService:
             "min_cover_rate": config.min_cover_rate,
             "provider_config_json": config.provider_config_json,
         }
+
+    @staticmethod
+    def _normalize_sign_type(sign_type: str | None) -> SignType | None:
+        if not sign_type:
+            return None
+        try:
+            return SignType(str(sign_type).strip())
+        except ValueError:
+            return None
+
+    def _get_course_snapshot(self, account_id: int, course_snapshot_id: int) -> CourseSnapshot:
+        with session_context() as session:
+            snapshot = session.get(CourseSnapshot, course_snapshot_id)
+            if snapshot is None or snapshot.account_id != account_id:
+                raise LookupError("Course snapshot not found")
+            return CourseSnapshot.model_validate(snapshot.model_dump())
+
+    @staticmethod
+    def _serialize_course_snapshot(snapshot: CourseSnapshot) -> dict[str, Any]:
+        return {
+            "id": snapshot.id,
+            "accountId": snapshot.account_id,
+            "courseId": snapshot.course_id,
+            "clazzId": snapshot.clazz_id,
+            "cpi": snapshot.cpi,
+            "title": snapshot.title,
+            "teacher": snapshot.teacher,
+            "fetchedAt": snapshot.fetched_at.isoformat(),
+        }
+
+    @staticmethod
+    def _serialize_sign_activity(activity) -> dict[str, Any]:
+        return {
+            "activeId": activity.active_id,
+            "courseId": activity.course_id,
+            "classId": activity.class_id,
+            "ext": activity.ext,
+            "name": activity.name,
+            "endName": activity.end_name,
+            "activeType": activity.active_type,
+            "type": activity.type,
+            "status": activity.status,
+            "userStatus": activity.user_status,
+            "otherId": activity.other_id,
+            "signType": activity.sign_type,
+            "isLook": activity.is_look,
+            "startTime": activity.start_time,
+            "endTime": activity.end_time,
+        }
+
+    @staticmethod
+    def _serialize_sign_context(context: SignContext) -> dict[str, Any]:
+        return {
+            "activeId": context.active_id,
+            "courseId": context.course_id,
+            "classId": context.class_id,
+            "ext": context.ext,
+            "signType": str(context.sign_type),
+            "name": context.name,
+        }
+
+    @classmethod
+    def _serialize_sign_detail(cls, detail: SignDetail) -> dict[str, Any]:
+        return {
+            "activeId": detail.active_id,
+            "signType": str(detail.sign_type),
+            "name": detail.name,
+            "title": detail.title,
+            "otherId": detail.other_id,
+            "status": detail.status,
+            "userStatus": detail.user_status,
+            "activeType": detail.active_type,
+            "startTime": detail.start_time,
+            "endTime": detail.end_time,
+            "lateEndTime": detail.late_end_time,
+            "signInId": detail.sign_in_id,
+            "signOutId": detail.sign_out_id,
+            "signOutPublishTime": detail.sign_out_publish_time,
+            "numberCount": detail.number_count,
+            "ifOpenAddress": detail.if_open_address,
+            "ifRefreshQrcode": detail.if_refresh_qrcode,
+            "ifNeedVcode": detail.if_need_vcode,
+            "locationLatitude": detail.location_latitude,
+            "locationLongitude": detail.location_longitude,
+            "locationRange": detail.location_range,
+            "locationText": detail.location_text,
+            "raw": detail.raw,
+        }
+
+    @classmethod
+    def _serialize_sign_preflight(cls, preflight: SignPreflight) -> dict[str, Any]:
+        return {
+            "activeId": preflight.active_id,
+            "signType": str(preflight.sign_type),
+            "alreadySigned": preflight.already_signed,
+            "analysisCode": preflight.analysis_code,
+            "rawHtml": preflight.raw_html,
+            "detail": cls._serialize_sign_detail(preflight.detail) if preflight.detail else None,
+        }
+
+    @staticmethod
+    def _serialize_sign_captcha(captcha: SignCaptchaData) -> dict[str, Any]:
+        return {
+            "captchaId": captcha.captcha_id,
+            "type": captcha.type,
+            "version": captcha.version,
+            "token": captcha.token,
+            "captchaKey": captcha.captcha_key,
+            "iv": captcha.iv,
+            "shadeImage": captcha.shade_image,
+            "cutoutImage": captcha.cutout_image,
+        }
+
+    @staticmethod
+    def _serialize_sign_result(result: SignSubmitResult) -> dict[str, Any]:
+        return {
+            "activeId": result.active_id,
+            "signType": str(result.sign_type),
+            "status": str(result.status),
+            "message": result.message,
+            "rawResponse": result.raw_response,
+            "captchaRequired": result.captcha_required,
+            "alreadySigned": result.already_signed,
+            "ended": result.ended,
+            "wrongLocation": result.wrong_location,
+        }
+
+    @staticmethod
+    def _serialize_sign_photo_upload(upload: SignPhotoUpload) -> dict[str, Any]:
+        return {
+            "token": upload.token,
+            "objectId": upload.object_id,
+            "filePath": upload.file_path,
+        }
+
+    @staticmethod
+    def _normalize_captcha_data(captcha_data: dict[str, Any]) -> SignCaptchaData:
+        if "captchaId" not in captcha_data and "shadeImage" not in captcha_data and "cutoutImage" not in captcha_data:
+            return SignCaptchaData.model_validate(captcha_data)
+
+        return SignCaptchaData.model_validate(
+            {
+                "captcha_id": captcha_data.get("captchaId"),
+                "type": captcha_data.get("type"),
+                "version": captcha_data.get("version"),
+                "token": captcha_data.get("token"),
+                "captcha_key": captcha_data.get("captchaKey"),
+                "iv": captcha_data.get("iv"),
+                "shade_image": captcha_data.get("shadeImage"),
+                "cutout_image": captcha_data.get("cutoutImage"),
+            }
+        )
 
     def _store_course_snapshots(self, session, account: Account, courses: list[dict[str, Any]]) -> None:
         now = datetime.now(timezone.utc)
