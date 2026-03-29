@@ -148,6 +148,7 @@ config.ini
 backend.ini
 chaoxing.log
 config*.ini
+config.yaml
 .chaoxing.log
 ./config.ini
 ./chaoxing.log

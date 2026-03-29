@@ -15,7 +15,7 @@ RUN uv pip install --system --no-cache -r requirements.txt
 COPY chaoxing ./chaoxing
 COPY resource ./resource
 COPY config.example.yaml ./config.example.yaml
-COPY config.yaml* /config/config.yaml
+COPY config.yaml ./config.yaml
 COPY pyproject.toml ./pyproject.toml
 COPY README.md ./README.md
 COPY LICENSE ./LICENSE

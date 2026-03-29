@@ -16,7 +16,7 @@ services:
       CHAOXING_WEB_ACCOUNTS_DIR: /data/accounts
       TZ: Asia/Shanghai
     volumes:
-      - ./.docker-data/config:/config
+      - ./config.yaml:/config/config.yaml
       - ./.docker-data/runtime:/data
     expose:
       - "8000"

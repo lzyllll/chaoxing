@@ -86,23 +86,33 @@ uv run --python 3.13 main.py -c config.ini
 copy docker-compose.env.example .env
 ```
 
-2. 构建并启动服务
+2. 准备后端配置（管理员登录账号密码）
+
+```bash
+copy config.example.yaml config.yaml
+```
+
+在 `./config.yaml` 里填写 `admin.username` 和 `admin.password`。
+
+> 注意：Docker Compose 会把项目根目录 `config.yaml` 挂载到容器内 `/config/config.yaml`，修改 `./config.yaml` 后重启 `backend` 即可生效。
+
+3. 构建并启动服务
 
 ```bash
 docker compose up --build -d
 ```
 
-3. 打开浏览器访问
+4. 打开浏览器访问
 
 ```text
 http://127.0.0.1:5173
 ```
 
-4. 说明
-   - `backend` 使用根目录 `Dockerfile` 构建，启动时如果 `/config/config.yaml` 不存在，会自动从镜像内的 `config.example.yaml` 生成默认配置
+5. 说明
+    - `backend` 使用根目录 `Dockerfile` 构建，并通过 Compose 将 `./config.yaml` 挂载到容器内 `/config/config.yaml`
    - `frontend` 使用 `frontend/Dockerfile` 构建，负责静态页面和 `/api`、`/ws` 反向代理
-   - Docker 运行数据默认持久化到根目录 `./.docker-data`
-   - `./.docker-data/config/config.yaml` 可直接在宿主机编辑，修改后重启 `backend` 服务生效
+    - Docker 运行数据（SQLite、cookies 等）默认持久化到根目录 `./.docker-data/runtime`
+    - 修改 `./config.yaml` 后，执行 `docker compose restart backend` 即可让后端加载新配置
    - 百度地图 AK 通过根目录 `.env` 中的 `VITE_BAIDU_MAP_AK` 注入到前端镜像构建阶段
    - 如果需要改端口，可在根目录 `.env` 里修改 `BACKEND_PORT_BIND` 和 `FRONTEND_PORT_BIND`
 
