@@ -36,7 +36,6 @@ services:
     init: true
     restart: unless-stopped
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
     ports:
       - "${FRONTEND_PORT_BIND:-0.0.0.0:5173:80}"
