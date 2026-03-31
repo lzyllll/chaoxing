@@ -38,6 +38,10 @@ class SignCaptchaVerifyRequest(SignSubmitRequest):
     captchaData: dict
 
 
+class SignCaptchaRecognizeRequest(SQLModel):
+    captchaData: dict
+
+
 def _to_sign_location(location: SignLocationRequest | None) -> SignLocation | None:
     if location is None:
         return None
@@ -86,6 +90,21 @@ def get_sign_captcha(account_id: int, payload: SignContextRequest) -> dict:
             ext=payload.ext,
             sign_type=payload.signType,
         )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/accounts/{account_id}/signs/captcha/recognize")
+def recognize_sign_captcha(account_id: int, payload: SignCaptchaRecognizeRequest) -> dict:
+    try:
+        return task_runtime_service.recognize_sign_captcha(
+            account_id,
+            captcha_data=payload.captchaData,
+        )
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=exc.errors()) from exc
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:

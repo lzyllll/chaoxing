@@ -12,6 +12,7 @@ import type {
   CreateTaskPayload,
   HealthResponse,
   PendingDecisionItem,
+  SignCaptchaRecognizeResponse,
   SignCaptchaResponse,
   SignCaptchaVerifyPayload,
   SignInspectResponse,
@@ -118,6 +119,16 @@ export async function inspectSign(accountId: number, payload: SignContextPayload
 
 export async function getSignCaptcha(accountId: number, payload: SignContextPayload): Promise<SignCaptchaResponse> {
   const { data } = await http.post<SignCaptchaResponse>(`/accounts/${accountId}/signs/captcha`, payload)
+  return data
+}
+
+export async function recognizeSignCaptcha(
+  accountId: number,
+  captchaData: SignCaptchaVerifyPayload['captchaData'],
+): Promise<SignCaptchaRecognizeResponse> {
+  const { data } = await http.post<SignCaptchaRecognizeResponse>(`/accounts/${accountId}/signs/captcha/recognize`, {
+    captchaData,
+  })
   return data
 }
 

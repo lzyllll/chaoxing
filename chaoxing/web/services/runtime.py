@@ -21,6 +21,7 @@ from chaoxing.models import (
     SignSubmitResult,
     SignType,
 )
+from chaoxing.ocr.slider import get_slider_distance
 from chaoxing.services.answer_records import AnswerRecordService
 from chaoxing.services.runner import init_chaoxing, process_course, sanitize_common_config
 from chaoxing.web.db import session_context
@@ -160,6 +161,21 @@ class TaskRuntimeService:
         )
         captcha = signer.get_captcha()
         return {"captchaData": self._serialize_sign_captcha(captcha)}
+
+    def recognize_sign_captcha(
+        self,
+        account_id: int,
+        *,
+        captcha_data: dict[str, Any],
+    ) -> dict[str, float]:
+        with session_context() as session:
+            account = session.get(Account, account_id)
+            if account is None:
+                raise LookupError("Account not found")
+
+        captcha = self._normalize_captcha_data(captcha_data)
+        x_position = float(get_slider_distance(captcha.shade_image, captcha.cutout_image))
+        return {"xPosition": x_position}
 
     def submit_sign(
         self,

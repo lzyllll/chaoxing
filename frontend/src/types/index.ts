@@ -206,6 +206,10 @@ export interface SignCaptchaResponse {
   captchaData: SignCaptchaDataItem
 }
 
+export interface SignCaptchaRecognizeResponse {
+  xPosition: number
+}
+
 export interface SignSubmitResponse {
   result: SignSubmitResultItem
   captchaData?: SignCaptchaDataItem

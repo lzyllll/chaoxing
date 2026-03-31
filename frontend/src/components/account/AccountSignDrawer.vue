@@ -7,6 +7,7 @@ import {
   getCourseSigns,
   getSignCaptcha,
   inspectSign,
+  recognizeSignCaptcha,
   submitSign,
   submitSignWithCaptcha,
   uploadSignPhoto,
@@ -64,6 +65,7 @@ const loadingSigns = ref(false)
 const inspecting = ref(false)
 const submitting = ref(false)
 const refreshingCaptcha = ref(false)
+const recognizingCaptcha = ref(false)
 const uploadingPhoto = ref(false)
 
 const signPage = ref<CourseSignsResponse | null>(null)
@@ -497,6 +499,11 @@ function buildSubmitPayload(): SignSubmitPayload {
   }
 }
 
+function applyRecognizedCaptchaXPosition(xPosition: number): void {
+  const sliderRatio = Math.max(0, Math.min(1, (xPosition + 8) / 280))
+  captchaSliderPx.value = Number((sliderRatio * sliderMaxPx.value).toFixed(0))
+}
+
 function applySubmitResponse(payload: { result: SignSubmitResultItem; captchaData?: SignCaptchaDataItem }): void {
   submitResult.value = payload.result
   if (selectedActivity.value) {
@@ -561,6 +568,24 @@ async function refreshCaptcha(): Promise<void> {
     message.error(extractErrorMessage(error, '获取验证码失败'))
   } finally {
     refreshingCaptcha.value = false
+  }
+}
+
+async function handleRecognizeCaptcha(): Promise<void> {
+  if (!captchaData.value) {
+    message.warning('请先获取验证码')
+    return
+  }
+
+  recognizingCaptcha.value = true
+  try {
+    const response = await recognizeSignCaptcha(props.accountId, captchaData.value)
+    applyRecognizedCaptchaXPosition(response.xPosition)
+    message.success(`已识别建议位移，提交用 xPosition：${response.xPosition}`)
+  } catch (error) {
+    message.error(extractErrorMessage(error, '自动识别验证码失败'))
+  } finally {
+    recognizingCaptcha.value = false
   }
 }
 
@@ -719,7 +744,7 @@ function extractErrorMessage(error: unknown, fallback: string): string {
               :title="submitResult.message || '签到结果'"
             >
               <template v-if="submitResult.status === 'captcha_required'">
-                需要手动拖动滑块，确认下方 x 位移后再提交验证码。
+                需要手动拖动滑块，或者点击“自动识别”获取建议位移后再提交验证码。
               </template>
               <template v-else-if="submitResult.rawResponse">
                 原始响应：{{ submitResult.rawResponse }}
@@ -825,6 +850,15 @@ function extractErrorMessage(error: unknown, fallback: string): string {
               >
                 获取验证码
               </n-button>
+              <n-button
+                v-if="captchaData"
+                tertiary
+                :disabled="inspection?.preflight.alreadySigned"
+                :loading="recognizingCaptcha"
+                @click="handleRecognizeCaptcha"
+              >
+                自动识别
+              </n-button>
               <n-button v-if="uploadingPhoto" :loading="uploadingPhoto" disabled>
                 上传中
               </n-button>
@@ -833,7 +867,7 @@ function extractErrorMessage(error: unknown, fallback: string): string {
             <n-card v-if="captchaData" embedded size="small" title="手动滑块验证码">
               <n-space vertical size="large">
                 <n-alert type="info" :show-icon="false">
-                  拖动滑块让拼图与缺口对齐。当前换算后的 x 位移为 {{ normalizedCaptchaX }}。
+                  拖动滑块让拼图与缺口对齐。自动识别只会回填建议位置，提交前请自行确认。当前换算后的 x 位移为 {{ normalizedCaptchaX }}。
                 </n-alert>
 
                 <div ref="captchaStageRef" class="sign-captcha-stage">
