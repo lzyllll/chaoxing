@@ -95,6 +95,16 @@ class StudyResult(Enum):
         return self != StudyResult.SUCCESS
 
 class Chaoxing(SignMixin):
+    _COOKIE_DOMAIN_PREFERENCES = (
+        "",
+        ".chaoxing.com",
+        "mobilelearn.chaoxing.com",
+        "mooc1.chaoxing.com",
+        "mooc2-ans.chaoxing.com",
+        "passport2.chaoxing.com",
+        "sso.chaoxing.com",
+    )
+
     def __init__(self, account: Account = None, tiku: Tiku = None, **kwargs):
         self.cookies_path = kwargs.pop("cookies_path", None)
         self.account = account
@@ -175,7 +185,7 @@ class Chaoxing(SignMixin):
 
     def _validate_cookie_session(self) -> bool:
         session = self.session
-        if not session.cookies.get("_uid"):
+        if not self._get_cookie_value("_uid"):
             return False
 
         test_session = requests.Session()
@@ -201,16 +211,35 @@ class Chaoxing(SignMixin):
         return True
 
     def get_fid(self):
-        _session = self.session
-        return _session.cookies.get("fid")
+        return self._get_cookie_value("fid")
 
     def get_uid(self):
-        s = self.session
-        if "_uid" in s.cookies:
-            return s.cookies["_uid"]
-        if "UID" in s.cookies:
-            return s.cookies["UID"]
+        uid = self._get_cookie_value("_uid")
+        if uid:
+            return uid
+        uid = self._get_cookie_value("UID")
+        if uid:
+            return uid
         raise ValueError("Cannot get uid !")
+
+    def _get_cookie_value(self, name: str) -> str | None:
+        matched = [cookie for cookie in self.session.cookies if cookie.name == name]
+        if not matched:
+            return None
+
+        for preferred_domain in self._COOKIE_DOMAIN_PREFERENCES:
+            for cookie in matched:
+                cookie_domain = cookie.domain or ""
+                if cookie_domain == preferred_domain:
+                    return cookie.value
+
+        for preferred_domain in self._COOKIE_DOMAIN_PREFERENCES[1:]:
+            for cookie in matched:
+                cookie_domain = cookie.domain or ""
+                if cookie_domain.endswith(preferred_domain):
+                    return cookie.value
+
+        return matched[0].value
 
     def get_course_list(self):
         _session = self.session
