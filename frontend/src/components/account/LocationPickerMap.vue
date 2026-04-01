@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
-import { useMessage } from 'naive-ui'
+import { computed, h, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { NButton, NSpace, useMessage } from 'naive-ui'
+import { useLocalStorage } from '@vueuse/core'
 
 import { frontendRuntime } from '@/config/runtime'
 
@@ -84,7 +85,105 @@ function loadBaiduMapSdk(): Promise<any> {
 
 const DEFAULT_CENTER: [number, number] = [116.404, 39.915]
 
+interface LocationPreset {
+  id: string
+  alias: string
+  address: string
+  latitude: number
+  longitude: number
+}
+
+const locationPresets = useLocalStorage<LocationPreset[]>('chaoxing-location-presets', [])
+const showPresetModal = ref(false)
+const showEditPresetModal = ref(false)
+const editingPreset = ref<Partial<LocationPreset>>({})
+
 const message = useMessage()
+
+const presetColumns = computed(() => [
+  { title: '别名', key: 'alias', width: 120 },
+  { title: '经度', key: 'longitude', width: 120 },
+  { title: '纬度', key: 'latitude', width: 120 },
+  { title: '详址', key: 'address', ellipsis: { tooltip: true } },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 140,
+    render: (row: LocationPreset) =>
+      h(NSpace, { size: 'small' }, {
+        default: () => [
+          h(
+            NButton,
+            { size: 'small', type: 'primary', onClick: () => applyPreset(row) },
+            { default: () => '使用' }
+          ),
+          h(
+            NButton,
+            { size: 'small', type: 'error', secondary: true, onClick: () => deletePreset(row.id) },
+            { default: () => '删除' }
+          )
+        ]
+      })
+  }
+])
+
+function applyPreset(preset: LocationPreset) {
+  lastSelectionSignature.value = ''
+  applySelection(preset.longitude, preset.latitude, { reverseGeocode: false, centerMap: true })
+  emit('update:address', preset.address)
+  showPresetModal.value = false
+  message.success(`已应用快捷位置：${preset.alias}`)
+}
+
+function deletePreset(id: string) {
+  locationPresets.value = locationPresets.value.filter((p: LocationPreset) => p.id !== id)
+  message.success('已删除快捷位置')
+}
+
+function openAddPreset() {
+  editingPreset.value = {
+    id: '',
+    alias: '',
+    address: '',
+    latitude: 39.915,
+    longitude: 116.404
+  }
+  showEditPresetModal.value = true
+}
+
+function addCurrentAsPreset() {
+  editingPreset.value = {
+    id: '',
+    alias: '',
+    address: props.address || '',
+    latitude: props.latitude ?? 39.915,
+    longitude: props.longitude ?? 116.404
+  }
+  showEditPresetModal.value = true
+}
+
+function savePreset() {
+  if (!editingPreset.value.alias) {
+    message.warning('请输入别名')
+    return
+  }
+  if (!editingPreset.value.id) {
+    locationPresets.value.push({
+      id: Date.now().toString(),
+      alias: editingPreset.value.alias,
+      address: editingPreset.value.address || '',
+      latitude: editingPreset.value.latitude as number,
+      longitude: editingPreset.value.longitude as number
+    })
+  } else {
+    const idx = locationPresets.value.findIndex((p: LocationPreset) => p.id === editingPreset.value.id)
+    if (idx !== -1) {
+      locationPresets.value[idx] = editingPreset.value as LocationPreset
+    }
+  }
+  showEditPresetModal.value = false
+  message.success('保存成功')
+}
 const mapContainerRef = ref<HTMLDivElement | null>(null)
 const loading = ref(false)
 const loadError = ref('')
@@ -625,7 +724,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <n-space vertical size="small">
+  <n-space vertical size="small" style="width: 100%" item-style="width: 100%">
     <n-space justify="space-between" align="center" wrap>
       <n-space size="small" wrap>
         <n-button size="small" secondary :disabled="!targetCenter || disabled" @click="useTargetCenter">
@@ -633,6 +732,9 @@ onBeforeUnmount(() => {
         </n-button>
         <n-button size="small" secondary :disabled="!baiduReady || disabled" @click="locateCurrentPosition">
           使用当前定位
+        </n-button>
+        <n-button size="small" type="primary" :disabled="disabled" @click="showPresetModal = true">
+          常用位置
         </n-button>
       </n-space>
       <n-tag :bordered="false" :type="rangeAlertType">
@@ -664,6 +766,57 @@ onBeforeUnmount(() => {
       <n-text depth="3">已选经度 {{ props.longitude ?? '--' }}</n-text>
       <n-text v-if="props.address" depth="3">已选地址 {{ props.address }}</n-text>
     </n-space>
+
+    <n-modal v-model:show="showPresetModal">
+      <n-card style="width: 700px; max-width: 90vw;" title="常用位置" closable @close="showPresetModal = false">
+        <n-space vertical size="medium">
+          <n-space justify="space-between" align="center">
+            <n-button size="small" type="primary" @click="openAddPreset">新建常用位置</n-button>
+            <n-button size="small" secondary :disabled="props.latitude == null" @click="addCurrentAsPreset">
+              将地图当前选中点存为常用
+            </n-button>
+          </n-space>
+          
+          <n-data-table
+            :columns="presetColumns"
+            :data="locationPresets"
+            :max-height="300"
+          >
+            <template #empty>暂无常用位置，请新建或记录</template>
+          </n-data-table>
+        </n-space>
+      </n-card>
+    </n-modal>
+
+    <n-modal v-model:show="showEditPresetModal">
+      <n-card
+        style="width: 400px; max-width: 90vw;"
+        :title="editingPreset.id ? '编辑常用位置' : '新建常用位置'"
+        closable
+        @close="showEditPresetModal = false"
+      >
+        <n-form label-placement="left" label-width="60">
+          <n-form-item label="别名">
+            <n-input v-model:value="editingPreset.alias" placeholder="例如：宿舍、教三" />
+          </n-form-item>
+          <n-form-item label="地点">
+            <n-input v-model:value="editingPreset.address" placeholder="详细地址" />
+          </n-form-item>
+          <n-form-item label="经度">
+            <n-input-number v-model:value="editingPreset.longitude" :step="0.000001" style="width: 100%" />
+          </n-form-item>
+          <n-form-item label="纬度">
+            <n-input-number v-model:value="editingPreset.latitude" :step="0.000001" style="width: 100%" />
+          </n-form-item>
+        </n-form>
+        <template #footer>
+          <n-space justify="end">
+            <n-button @click="showEditPresetModal = false">取消</n-button>
+            <n-button type="primary" @click="savePreset">保存</n-button>
+          </n-space>
+        </template>
+      </n-card>
+    </n-modal>
   </n-space>
 </template>
 
