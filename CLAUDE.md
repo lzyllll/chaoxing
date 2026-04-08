@@ -19,7 +19,7 @@ CLI Mode:
   main.py → chaoxing.services.runner.run_study() → chaoxing.core.base.Chaoxing
 
 Web Mode:
-  web_api.py → chaoxing.web.app (FastAPI) → chaoxing.services.runner (async tasks)
+  uvicorn chaoxing.web.app:app → chaoxing.services.runner (async tasks)
   frontend/ (Vue3 + Vite) → API calls to backend
 ```
 
@@ -82,9 +82,9 @@ python main.py -u <phone> -p <password> -l <course_ids> -s 1.5 -j 4 -v
 
 ```bash
 # Backend (from project root)
-python web_api.py
+uvicorn chaoxing.web.app:app --host 127.0.0.1 --port 8000 --reload
 # or with uv
-uv run --python 3.13 web_api.py
+uv run -m uvicorn chaoxing.web.app:app --host 127.0.0.1 --port 8000 --reload
 
 # Frontend (in frontend/ directory)
 cd frontend
@@ -106,7 +106,7 @@ pyinstaller -F main.py -n 'chaoxing' --add-data "resource;resource" --hidden-imp
 
 ### Backend (FastAPI + SQLModel + SQLite)
 
-- **Entry**: `web_api.py` → `chaoxing.web.app.create_app()`
+- **Entry**: `uvicorn chaoxing.web.app:app` → `chaoxing.web.app.create_app()`
 - **Database**: SQLite via SQLModel, auto-created on startup
 - **API Routes**:
   - `/api/accounts` - Account CRUD

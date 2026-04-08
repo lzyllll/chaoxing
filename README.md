@@ -108,12 +108,12 @@ http://127.0.0.1:5173
 ```
 
 5. 说明
-    - `backend` 使用根目录 `Dockerfile` 构建，并通过 Compose 将 `./config.yaml` 挂载到容器内 `/config/config.yaml`
-   - `frontend` 使用 `frontend/Dockerfile` 构建，负责静态页面和 `/api`、`/ws` 反向代理
-    - Docker 运行数据（SQLite、cookies 等）默认持久化到根目录 `./.docker-data/runtime`
-    - 修改 `./config.yaml` 后，执行 `docker compose restart backend` 即可让后端加载新配置
-   - 百度地图 AK 通过根目录 `.env` 中的 `VITE_BAIDU_MAP_AK` 注入到前端镜像构建阶段
-   - 如果需要改端口，可在根目录 `.env` 里修改 `BACKEND_PORT_BIND` 和 `FRONTEND_PORT_BIND`
+- `backend` 使用根目录 `Dockerfile` 构建，并通过 Compose 将 `./config.yaml` 挂载到容器内 `/config/config.yaml`
+- `frontend` 使用 `frontend/Dockerfile` 构建，负责静态页面和 `/api`、`/ws` 反向代理
+- Docker 运行数据（SQLite、cookies 等）默认持久化到根目录 `./.docker-data/runtime`
+- 修改 `./config.yaml` 后，执行 `docker compose restart backend` 即可让后端加载新配置
+- 百度地图 AK 通过根目录 `.env` 中的 `VITE_BAIDU_MAP_AK` 注入到前端镜像构建阶段
+- 如果需要改端口，可在根目录 `.env` 里修改 `BACKEND_PORT_BIND` 和 `FRONTEND_PORT_BIND`
 
 ### Web 控制台（FastAPI + Vue3 + SQLModel）
 
